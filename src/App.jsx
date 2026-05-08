@@ -24,6 +24,7 @@ const App = () => {
     nombre: '', edad: '', telefono: '', motivoConsulta: '', quienRefiere: ''
   });
   const [consultanteEditando, setConsultanteEditando] = useState(null);
+  const [consultanteVisualizando, setConsultanteVisualizando] = useState(null);
 
   // ============ PREPARACIÓN DE SESIÓN (CHAT IA) ============
   const [prepConsultanteId, setPrepConsultanteId] = useState('');
@@ -33,6 +34,7 @@ const App = () => {
   const [apiKey, setApiKey] = useState('');
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
+  const [generandoReporteIA, setGenerandoReporteIA] = useState(false);
 
   // ============ NOTAS DE SESIÓN ============
   const [notaActual, setNotaActual] = useState({
@@ -258,6 +260,92 @@ Te están preparando para acompañar la próxima sesión con ${consultante?.nomb
     setPrepMensajes([]);
   };
 
+  const generarReporteConIA = async () => {
+    if (!reporteSesion.consultanteId) {
+      alert('Selecciona primero un consultante.');
+      return;
+    }
+    if (!apiKey) {
+      alert('Falta configurar la API Key de Anthropic. Ábrela desde el ícono de llave en la pestaña "Preparando mi sesión".');
+      setShowApiKeyModal(true);
+      return;
+    }
+    const notasConsultante = notas
+      .filter(n => n.consultanteId === reporteSesion.consultanteId)
+      .sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+    const notasFecha = notasConsultante.filter(n => n.fecha === reporteSesion.fecha);
+    const notasUsadas = notasFecha.length > 0 ? notasFecha : notasConsultante.slice(0, 1);
+    if (notasUsadas.length === 0) {
+      alert('No hay notas registradas para este consultante. Captura primero las notas en la pestaña "Notas de la Sesión".');
+      return;
+    }
+    const consultante = consultantes.find(c => c.id === reporteSesion.consultanteId);
+    const notasTexto = notasUsadas.map(n => (
+      `Fecha: ${n.fecha}\nMotivo: ${n.motivoConsulta || '—'}\nTema: ${n.temaConsulta || '—'}\nNotas:\n${n.contenido || '—'}`
+    )).join('\n\n---\n\n');
+
+    const systemPrompt = `Eres una terapeuta logoterapéutica con experiencia clínica que escribe un reporte breve para enviarlo a su supervisor de confianza, quien le da seguimiento al caso.
+
+Tono y estilo:
+- Profesional, claro, ordenado, con vocabulario clínico cuando aplica.
+- Pero coloquial, cercano y honesto: como le hablarías a un colega que te conoce y te apoya.
+- Primera persona del singular ("trabajé con…", "noté que…", "le propuse…").
+- Sin pomposidad, sin tecnicismos innecesarios, sin frases acartonadas.
+- Que se lea humano, reflexivo y directo.
+
+Formato:
+- Un solo bloque de texto continuo (puede tener 2-3 párrafos cortos si ayuda a la lectura).
+- Entre 100 y 200 palabras (este rango es estricto).
+- Sin títulos, sin listas, sin viñetas, sin encabezados.
+- No inventes datos que no estén en las notas. Si algo no está, no lo digas.
+- Enfócate en: cómo llegó el consultante, qué se trabajó, qué intervención hiciste, qué notaste, y qué te queda pendiente o quieres consultar.
+
+Orientación clínica (obligatoria):
+- El reporte SIEMPRE debe estar enmarcado desde la logoterapia de Viktor Frankl. No es opcional.
+- Lee el material desde sus categorías centrales: búsqueda de sentido, valores (de creación, de experiencia, de actitud), libertad de la voluntad, responsabilidad, vacío existencial, autotrascendencia, dimensión noética, distancia de sí mismo.
+- Cuando describas tu intervención, nombra explícitamente el recurso logoterapéutico cuando aplique: diálogo socrático, derreflexión, intención paradójica, modificación de actitud, confrontación con el sentido, análisis existencial.
+- La hipótesis y lo que dejas pendiente para supervisión deben formularse en términos logoterapéuticos (qué sentido está en juego, qué valor se está bloqueando, qué actitud podría modificarse, dónde aparece la libertad o la responsabilidad).
+- No fuerces el lenguaje: úsalo solo cuando el material lo sostenga, pero la mirada siempre es logoterapéutica, no genéricamente psicológica.`;
+
+    const userPrompt = `Genera el reporte de la sesión basándote ÚNICAMENTE en las siguientes notas.
+
+Consultante: ${consultante?.nombre || '—'}${consultante?.edad ? ` (${consultante.edad} años)` : ''}
+Fecha de la sesión: ${reporteSesion.fecha}
+
+NOTAS DE LA SESIÓN:
+${notasTexto}
+
+Devuelve solo el texto del reporte, sin comentarios adicionales.`;
+
+    setGenerandoReporteIA(true);
+    try {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true"
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6",
+          max_tokens: 800,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: userPrompt }]
+        })
+      });
+      const data = await response.json();
+      if (data.error) throw new Error(data.error.message || 'Error en la API');
+      const texto = data.content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+      setReporteSesion(prev => ({ ...prev, intervencion: texto }));
+    } catch (error) {
+      console.error('Error generando reporte:', error);
+      alert(`No se pudo generar el reporte: ${error.message}`);
+    } finally {
+      setGenerandoReporteIA(false);
+    }
+  };
+
   // ============ NOTAS ============
   const guardarNota = async () => {
     if (!notaActual.consultanteId || !notaActual.fecha) {
@@ -265,11 +353,12 @@ Te están preparando para acompañar la próxima sesión con ${consultante?.nomb
       return;
     }
     const consultante = consultantes.find(c => c.id === notaActual.consultanteId);
+    const motivoDelConsultante = consultante?.motivoConsulta || '';
     let actualizadas;
     if (notaEditando) {
-      actualizadas = notas.map(n => n.id === notaEditando ? { ...notaActual, id: notaEditando, consultanteNombre: consultante?.nombre, edad: consultante?.edad } : n);
+      actualizadas = notas.map(n => n.id === notaEditando ? { ...notaActual, motivoConsulta: motivoDelConsultante, id: notaEditando, consultanteNombre: consultante?.nombre, edad: consultante?.edad } : n);
     } else {
-      const nueva = { ...notaActual, id: `n_${Date.now()}`, consultanteNombre: consultante?.nombre, edad: consultante?.edad, fechaCreacion: new Date().toISOString() };
+      const nueva = { ...notaActual, motivoConsulta: motivoDelConsultante, id: `n_${Date.now()}`, consultanteNombre: consultante?.nombre, edad: consultante?.edad, fechaCreacion: new Date().toISOString() };
       actualizadas = [...notas, nueva];
     }
     setNotas(actualizadas);
@@ -327,13 +416,17 @@ Te están preparando para acompañar la próxima sesión con ${consultante?.nomb
       return;
     }
     const consultante = consultantes.find(c => c.id === reporteSesion.consultanteId);
+    const motivoDelConsultante = consultante?.motivoConsulta || '';
+    const totalSesionesGlobal = (reporteEditando && reporteSesion.totalSesiones)
+      ? reporteSesion.totalSesiones
+      : String(72 + sesiones.length);
     let reporteGuardado;
     let actualizados;
     if (reporteEditando) {
-      reporteGuardado = { ...reporteSesion, id: reporteEditando, consultanteNombre: consultante?.nombre, edad: consultante?.edad };
+      reporteGuardado = { ...reporteSesion, motivoConsulta: motivoDelConsultante, totalSesiones: totalSesionesGlobal, id: reporteEditando, consultanteNombre: consultante?.nombre, edad: consultante?.edad };
       actualizados = sesiones.map(s => s.id === reporteEditando ? reporteGuardado : s);
     } else {
-      reporteGuardado = { ...reporteSesion, id: `r_${Date.now()}`, consultanteNombre: consultante?.nombre, edad: consultante?.edad, fechaCreacion: new Date().toISOString() };
+      reporteGuardado = { ...reporteSesion, motivoConsulta: motivoDelConsultante, totalSesiones: totalSesionesGlobal, id: `r_${Date.now()}`, consultanteNombre: consultante?.nombre, edad: consultante?.edad, fechaCreacion: new Date().toISOString() };
       actualizados = [...sesiones, reporteGuardado];
     }
     setSesiones(actualizados);
@@ -402,7 +495,6 @@ Te están preparando para acompañar la próxima sesión con ${consultante?.nomb
   </div>
   <div class="header">
     <h1>Reporte de Sesión de Logoterapia</h1>
-    <div class="sub">Plataforma de Inteligencia Clínica de Claudia Talamantes Dosal</div>
   </div>
   <div class="meta">
     <div><div class="lbl">Orientador Logoterapéutico</div><div class="val">${escape(r.orientador || '—')}</div></div>
@@ -509,7 +601,7 @@ Te están preparando para acompañar la próxima sesión con ${consultante?.nomb
 
   const formatoFecha = (d) => d.toISOString().split('T')[0];
   const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
-  const dias = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+  const dias = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
   const horarios = [];
   for (let h = 8; h <= 21; h++) {
@@ -530,7 +622,7 @@ Te están preparando para acompañar la próxima sesión con ${consultante?.nomb
   const diasMes = useMemo(() => {
     const año = fechaActual.getFullYear();
     const mes = fechaActual.getMonth();
-    const primerDia = new Date(año, mes, 1).getDay();
+    const primerDia = (new Date(año, mes, 1).getDay() + 6) % 7;
     const ultimoDia = new Date(año, mes + 1, 0).getDate();
     const dias = [];
     for (let i = 0; i < primerDia; i++) dias.push(null);
@@ -540,7 +632,7 @@ Te están preparando para acompañar la próxima sesión con ${consultante?.nomb
 
   const semanaActual = useMemo(() => {
     const inicio = new Date(fechaActual);
-    inicio.setDate(inicio.getDate() - inicio.getDay());
+    inicio.setDate(inicio.getDate() - ((inicio.getDay() + 6) % 7));
     return Array.from({ length: 7 }, (_, i) => {
       const d = new Date(inicio);
       d.setDate(d.getDate() + i);
@@ -1004,13 +1096,14 @@ Te están preparando para acompañar la próxima sesión con ${consultante?.nomb
             {/* Vista Semanal */}
             {vistaCalendario === 'semanal' && (
               <div style={{ background: colors.cardBg, borderRadius: 8, border: `1px solid ${colors.border}`, overflow: 'hidden' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '70px repeat(7, 1fr)', borderBottom: `1px solid ${colors.border}` }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '70px repeat(5, 1fr) 0.5fr 0.5fr', borderBottom: `1px solid ${colors.border}` }}>
                   <div style={{ background: colors.soft, borderRight: `1px solid ${colors.border}` }} />
                   {semanaActual.map((d, i) => {
                     const esHoy = formatoFecha(d) === formatoFecha(new Date());
+                    const esFinDeSemana = d.getDay() === 0 || d.getDay() === 6;
                     return (
-                      <div key={i} style={{ padding: 12, background: esHoy ? colors.primary : colors.soft, color: esHoy ? '#fff' : colors.text, textAlign: 'center', borderRight: i < 6 ? `1px solid ${colors.border}` : 'none' }}>
-                        <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, opacity: 0.8 }}>{dias[d.getDay()]}</div>
+                      <div key={i} style={{ padding: 12, background: esHoy ? colors.primary : esFinDeSemana ? '#DCDCDC' : colors.soft, color: esHoy ? '#fff' : colors.text, textAlign: 'center', borderRight: i < 6 ? `1px solid ${colors.border}` : 'none' }}>
+                        <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, opacity: 0.8 }}>{dias[(d.getDay() + 6) % 7]}</div>
                         <div style={{ fontFamily: fontDisplay, fontSize: 22, fontWeight: 600 }}>{d.getDate()}</div>
                       </div>
                     );
@@ -1020,13 +1113,15 @@ Te están preparando para acompañar la próxima sesión con ${consultante?.nomb
                   {horarios.map((slot) => {
                     const esHora = slot.endsWith(':00');
                     return (
-                      <div key={slot} style={{ display: 'grid', gridTemplateColumns: '70px repeat(7, 1fr)', borderBottom: esHora ? `1px solid ${colors.border}` : `1px dashed ${colors.border}` }}>
+                      <div key={slot} style={{ display: 'grid', gridTemplateColumns: '70px repeat(5, 1fr) 0.5fr 0.5fr', borderBottom: esHora ? `1px solid ${colors.border}` : `1px dashed ${colors.border}` }}>
                         <div style={{ padding: '4px 8px', textAlign: 'right', fontSize: 11, color: colors.textMuted, background: colors.soft, borderRight: `1px solid ${colors.border}`, fontWeight: esHora ? 600 : 400 }}>
                           {slot}
                         </div>
                         {semanaActual.map((d, i) => {
                           const fechaD = formatoFecha(d);
                           const citasSlot = citas.filter(c => c.fecha === fechaD && slotDeCita(c.hora) === slot);
+                          const esFinDeSemana = d.getDay() === 0 || d.getDay() === 6;
+                          const SLOT_PX = 28;
                           return (
                             <div
                               key={i}
@@ -1037,20 +1132,26 @@ Te están preparando para acompañar la próxima sesión con ${consultante?.nomb
                                 const id = e.dataTransfer.getData('text/cita-id');
                                 if (id) moverCita(id, fechaD, slot);
                               }}
-                              style={{ minHeight: 28, borderRight: i < 6 ? `1px solid ${colors.border}` : 'none', padding: 2, cursor: 'pointer' }}
+                              style={{ height: SLOT_PX, borderRight: i < 6 ? `1px solid ${colors.border}` : 'none', padding: 0, cursor: 'pointer', background: esFinDeSemana ? '#ECECEC' : 'transparent', position: 'relative', overflow: 'visible' }}
                               title={`Clic para agendar a las ${slot} · suelta una cita aquí para moverla`}
                             >
-                              {citasSlot.map(cita => (
-                                <div
-                                  key={cita.id}
-                                  draggable
-                                  onDragStart={(e) => { e.dataTransfer.setData('text/cita-id', cita.id); e.dataTransfer.effectAllowed = 'move'; e.stopPropagation(); }}
-                                  onClick={(e) => e.stopPropagation()}
-                                  style={{ background: colors.accentSoft, padding: '2px 6px', borderRadius: 3, fontSize: 10, borderLeft: `3px solid ${colors.accent}`, lineHeight: 1.3, marginBottom: 1, cursor: 'grab' }}
-                                >
-                                  <div style={{ fontWeight: 600 }}>{cita.hora} · {cita.consultanteNombre}</div>
-                                </div>
-                              ))}
+                              {citasSlot.map(cita => {
+                                const ini = minutosDeHora(cita.hora);
+                                const fin = cita.horaFin ? minutosDeHora(cita.horaFin) : ini + (cita.duracion || 60);
+                                const slots = Math.max(1, Math.ceil((fin - ini) / 15));
+                                const altura = slots * SLOT_PX - 2;
+                                return (
+                                  <div
+                                    key={cita.id}
+                                    draggable
+                                    onDragStart={(e) => { e.dataTransfer.setData('text/cita-id', cita.id); e.dataTransfer.effectAllowed = 'move'; e.stopPropagation(); }}
+                                    onClick={(e) => e.stopPropagation()}
+                                    style={{ position: 'absolute', top: 1, left: 2, right: 2, height: altura, background: colors.accentSoft, padding: '2px 6px', borderRadius: 3, fontSize: 10, borderLeft: `3px solid ${colors.accent}`, lineHeight: 1.3, cursor: 'grab', zIndex: 5, overflow: 'hidden', boxSizing: 'border-box' }}
+                                  >
+                                    <div style={{ fontWeight: 600 }}>{cita.hora}{cita.horaFin ? `–${cita.horaFin}` : ''} · {cita.consultanteNombre}</div>
+                                  </div>
+                                );
+                              })}
                             </div>
                           );
                         })}
@@ -1064,20 +1165,21 @@ Te están preparando para acompañar la próxima sesión con ${consultante?.nomb
             {/* Vista Mensual */}
             {vistaCalendario === 'mensual' && (
               <div style={{ background: colors.cardBg, borderRadius: 8, border: `1px solid ${colors.border}`, overflow: 'hidden' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', background: colors.primary, color: '#fff' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr) 0.5fr 0.5fr', background: colors.primary, color: '#fff' }}>
                   {dias.map(d => (
                     <div key={d} style={{ padding: 12, textAlign: 'center', fontSize: 11, letterSpacing: 1, fontWeight: 600 }}>{d.toUpperCase()}</div>
                   ))}
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr) 0.5fr 0.5fr' }}>
                   {diasMes.map((d, i) => {
                     if (!d) return <div key={i} style={{ minHeight: 110, background: colors.soft, borderRight: `1px solid ${colors.border}`, borderBottom: `1px solid ${colors.border}` }} />;
                     const esHoy = formatoFecha(d) === formatoFecha(new Date());
                     const inicioHoy = new Date(); inicioHoy.setHours(0, 0, 0, 0);
                     const esPasado = d < inicioHoy && !esHoy;
+                    const esFinDeSemana = d.getDay() === 0 || d.getDay() === 6;
                     const citasDia = citasDelDia(formatoFecha(d));
                     const fechaD = formatoFecha(d);
-                    const bgDia = esHoy ? colors.accentSoft : esPasado ? '#FAF5E8' : colors.cardBg;
+                    const bgDia = esHoy ? colors.accentSoft : esFinDeSemana ? '#ECECEC' : esPasado ? '#FAF5E8' : colors.cardBg;
                     return (
                       <div
                         key={i}
@@ -1100,7 +1202,7 @@ Te están preparando para acompañar la próxima sesión con ${consultante?.nomb
                             onClick={(e) => e.stopPropagation()}
                             style={{ fontSize: 10, padding: '2px 6px', background: colors.primary, color: '#fff', borderRadius: 2, marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'grab' }}
                           >
-                            {cita.hora} {cita.consultanteNombre}
+                            {cita.hora}{cita.horaFin ? `–${cita.horaFin}` : ''} {cita.consultanteNombre}
                           </div>
                         ))}
                         {citasDia.length > 3 && <div style={{ fontSize: 10, color: colors.textMuted }}>+{citasDia.length - 3} más</div>}
@@ -1209,7 +1311,12 @@ Te están preparando para acompañar la próxima sesión con ${consultante?.nomb
                   </div>
                 ) : (
                   consultantes.map(c => (
-                    <div key={c.id} style={{ background: colors.cardBg, padding: 20, borderRadius: 8, border: `1px solid ${colors.border}`, borderLeft: `3px solid ${colors.accent}` }}>
+                    <div
+                      key={c.id}
+                      onClick={() => setConsultanteVisualizando(c)}
+                      title="Clic para abrir la ficha"
+                      style={{ background: colors.cardBg, padding: 20, borderRadius: 8, border: `1px solid ${colors.border}`, borderLeft: `3px solid ${colors.accent}`, cursor: 'pointer' }}
+                    >
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <div style={{ flex: 1 }}>
                           <div style={{ fontFamily: fontDisplay, fontSize: 20, color: colors.primary, fontWeight: 600 }}>{c.nombre}</div>
@@ -1227,6 +1334,7 @@ Te están preparando para acompañar la próxima sesión con ${consultante?.nomb
                             href={`https://wa.me/${c.telefono.replace(/\D/g, '')}`}
                             target="_blank"
                             rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
                             style={{ background: '#25D366', color: '#fff', padding: '6px 12px', borderRadius: 4, fontSize: 12, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6 }}
                           >
                             <MessageCircle size={12} /> WhatsApp
@@ -1235,15 +1343,16 @@ Te están preparando para acompañar la próxima sesión con ${consultante?.nomb
                         {c.telefono && (
                           <a
                             href={`tel:${c.telefono}`}
+                            onClick={(e) => e.stopPropagation()}
                             style={{ background: colors.soft, color: colors.text, padding: '6px 12px', borderRadius: 4, fontSize: 12, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6 }}
                           >
                             <Phone size={12} /> Llamar
                           </a>
                         )}
-                        <button onClick={() => editarConsultante(c)} style={{ background: 'transparent', border: `1px solid ${colors.border}`, padding: '6px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12, marginLeft: 'auto' }}>
+                        <button onClick={(e) => { e.stopPropagation(); editarConsultante(c); }} style={{ background: 'transparent', border: `1px solid ${colors.border}`, padding: '6px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12, marginLeft: 'auto' }}>
                           Editar
                         </button>
-                        <button onClick={() => eliminarConsultante(c.id)} style={{ background: 'transparent', border: `1px solid ${colors.danger}`, color: colors.danger, padding: '6px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>
+                        <button onClick={(e) => { e.stopPropagation(); eliminarConsultante(c.id); }} style={{ background: 'transparent', border: `1px solid ${colors.danger}`, color: colors.danger, padding: '6px 12px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>
                           <Trash2 size={12} />
                         </button>
                       </div>
@@ -1581,10 +1690,10 @@ Te están preparando para acompañar la próxima sesión con ${consultante?.nomb
                       </label>
                       <input
                         type="text"
-                        value={notaActual.motivoConsulta}
-                        onChange={(e) => setNotaActual({ ...notaActual, motivoConsulta: e.target.value })}
-                        placeholder="Razón por la cual el consultante asistió a esta sesión"
-                        style={{ width: '100%', padding: '12px 14px', border: `1px solid ${colors.border}`, borderRadius: 4, fontSize: 14, fontFamily: fontBody, background: colors.bg, outline: 'none', boxSizing: 'border-box' }}
+                        value={consultantes.find(c => c.id === notaActual.consultanteId)?.motivoConsulta || ''}
+                        readOnly
+                        placeholder="Se toma del registro del consultante (pestaña Nuevo Consultante)"
+                        style={{ width: '100%', padding: '12px 14px', border: `1px solid ${colors.border}`, borderRadius: 4, fontSize: 14, fontFamily: fontBody, background: colors.soft, outline: 'none', boxSizing: 'border-box', color: colors.primary }}
                       />
                     </div>
                     <div>
@@ -1841,7 +1950,7 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
                     <input
                       type="number"
                       value={reporteSesion.consultaDe}
-                      onChange={(e) => setReporteSesion({ ...reporteSesion, consultaDe: e.target.value, totalSesiones: e.target.value })}
+                      onChange={(e) => setReporteSesion({ ...reporteSesion, consultaDe: e.target.value })}
                       placeholder="10"
                       style={{ width: 70, padding: '8px 12px', border: `1px solid ${colors.border}`, borderRadius: 4, fontSize: 16, fontFamily: fontDisplay, fontWeight: 600, color: colors.primary, background: '#fff', outline: 'none', textAlign: 'center', boxSizing: 'border-box' }}
                     />
@@ -1856,7 +1965,7 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
                   </label>
                   <input
                     type="number"
-                    value={reporteSesion.consultaDe}
+                    value={(reporteEditando && reporteSesion.totalSesiones) ? reporteSesion.totalSesiones : 72 + sesiones.length}
                     readOnly
                     style={{ width: '100%', padding: '12px 14px', border: `1px solid ${colors.border}`, borderRadius: 4, fontSize: 14, fontFamily: fontBody, background: colors.soft, outline: 'none', boxSizing: 'border-box', color: colors.primary, fontWeight: 600 }}
                   />
@@ -1875,10 +1984,10 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
                   </label>
                   <input
                     type="text"
-                    value={reporteSesion.motivoConsulta}
-                    onChange={(e) => setReporteSesion({ ...reporteSesion, motivoConsulta: e.target.value })}
-                    placeholder="Razón por la cual el consultante asistió a esta sesión"
-                    style={{ width: '100%', padding: '12px 14px', border: `1px solid ${colors.border}`, borderRadius: 4, fontSize: 14, fontFamily: fontBody, background: colors.bg, outline: 'none', boxSizing: 'border-box' }}
+                    value={consultantes.find(c => c.id === reporteSesion.consultanteId)?.motivoConsulta || ''}
+                    readOnly
+                    placeholder="Se toma del registro del consultante (pestaña Nuevo Consultante)"
+                    style={{ width: '100%', padding: '12px 14px', border: `1px solid ${colors.border}`, borderRadius: 4, fontSize: 14, fontFamily: fontBody, background: colors.soft, outline: 'none', boxSizing: 'border-box', color: colors.primary }}
                   />
                 </div>
                 <div>
@@ -1896,9 +2005,26 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
               </div>
 
               {/* SECCIÓN 3 */}
-              <div style={{ padding: '28px 32px', borderTop: `1px solid ${colors.border}`, borderBottom: `1px solid ${colors.border}`, background: colors.soft }}>
-                <div style={{ fontSize: 11, letterSpacing: 2, color: colors.accent, textTransform: 'uppercase', marginBottom: 4, fontWeight: 700 }}>Sección 3</div>
-                <h3 style={{ fontFamily: fontDisplay, fontSize: 22, margin: 0, color: colors.primary, fontWeight: 500 }}>Intervención</h3>
+              <div style={{ padding: '28px 32px', borderTop: `1px solid ${colors.border}`, borderBottom: `1px solid ${colors.border}`, background: colors.soft, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16 }}>
+                <div>
+                  <div style={{ fontSize: 11, letterSpacing: 2, color: colors.accent, textTransform: 'uppercase', marginBottom: 4, fontWeight: 700 }}>Sección 3</div>
+                  <h3 style={{ fontFamily: fontDisplay, fontSize: 22, margin: 0, color: colors.primary, fontWeight: 500 }}>Intervención</h3>
+                </div>
+                <button
+                  onClick={generarReporteConIA}
+                  disabled={generandoReporteIA || !reporteSesion.consultanteId}
+                  title="Generar reporte automático a partir de las notas de la sesión"
+                  style={{
+                    background: (generandoReporteIA || !reporteSesion.consultanteId) ? colors.border : colors.primary,
+                    color: '#fff', border: 'none', padding: '10px 16px', borderRadius: 4,
+                    cursor: (generandoReporteIA || !reporteSesion.consultanteId) ? 'not-allowed' : 'pointer',
+                    fontSize: 12, fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase',
+                    display: 'flex', alignItems: 'center', gap: 8
+                  }}
+                >
+                  {generandoReporteIA ? <RefreshCw size={14} /> : <Sparkles size={14} />}
+                  {generandoReporteIA ? 'Generando…' : 'Generar con IA'}
+                </button>
               </div>
               <div style={{ padding: 32 }}>
                 <textarea
@@ -1908,6 +2034,9 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
                   rows={10}
                   style={{ width: '100%', padding: '14px 16px', border: `1px solid ${colors.border}`, borderRadius: 4, fontSize: 14, fontFamily: fontBody, background: colors.bg, outline: 'none', resize: 'vertical', boxSizing: 'border-box', lineHeight: 1.6 }}
                 />
+                <div style={{ marginTop: 8, fontSize: 11, color: colors.textMuted, fontStyle: 'italic' }}>
+                  El botón "Generar con IA" toma las notas registradas para este consultante y fecha (o la nota más reciente si no hay coincidencia exacta) y produce un reporte de 100-200 palabras con tono profesional y coloquial.
+                </div>
               </div>
 
               {/* SECCIÓN 4 */}
@@ -2218,12 +2347,64 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
         </div>
       )}
 
+      {/* MODAL FICHA CONSULTANTE */}
+      {consultanteVisualizando && (() => {
+        const c = consultanteVisualizando;
+        const sesionesConsultante = sesiones.filter(s => s.consultanteId === c.id);
+        const notasConsultante = notas.filter(n => n.consultanteId === c.id);
+        const ultimaSesion = sesionesConsultante.sort((a, b) => new Date(b.fecha) - new Date(a.fecha))[0];
+        return (
+          <div onClick={() => setConsultanteVisualizando(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(31, 38, 34, 0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20, overflowY: 'auto' }}>
+            <div onClick={(e) => e.stopPropagation()} style={{ background: colors.cardBg, borderRadius: 8, maxWidth: 720, width: '100%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+              <div style={{ padding: 24, borderBottom: `2px solid ${colors.accent}`, background: colors.primary, color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 10 }}>
+                <div>
+                  <div style={{ fontSize: 11, letterSpacing: 2, color: colors.accentSoft, textTransform: 'uppercase' }}>Ficha del Consultante</div>
+                  <h3 style={{ fontFamily: fontDisplay, fontSize: 24, margin: '4px 0 0', fontWeight: 500 }}>{c.nombre}</h3>
+                </div>
+                <button onClick={() => setConsultanteVisualizando(null)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#fff' }}>
+                  <X size={24} />
+                </button>
+              </div>
+              <div style={{ padding: 32 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, marginBottom: 24, padding: 20, background: colors.soft, borderRadius: 4 }}>
+                  <div><div style={{ fontSize: 10, color: colors.textMuted, letterSpacing: 1, textTransform: 'uppercase' }}>Edad</div><div style={{ fontFamily: fontBody, fontSize: 14, fontWeight: 600 }}>{c.edad ? `${c.edad} años` : '—'}</div></div>
+                  <div><div style={{ fontSize: 10, color: colors.textMuted, letterSpacing: 1, textTransform: 'uppercase' }}>Teléfono</div><div style={{ fontFamily: fontBody, fontSize: 14, fontWeight: 600 }}>{c.telefono || '—'}</div></div>
+                  <div><div style={{ fontSize: 10, color: colors.textMuted, letterSpacing: 1, textTransform: 'uppercase' }}>Quién lo refiere</div><div style={{ fontFamily: fontBody, fontSize: 14, fontWeight: 600 }}>{c.quienRefiere || '—'}</div></div>
+                  <div><div style={{ fontSize: 10, color: colors.textMuted, letterSpacing: 1, textTransform: 'uppercase' }}>Fecha de alta</div><div style={{ fontFamily: fontBody, fontSize: 14, fontWeight: 600 }}>{c.fechaAlta ? new Date(c.fechaAlta).toLocaleDateString('es-MX') : '—'}</div></div>
+                  <div><div style={{ fontSize: 10, color: colors.textMuted, letterSpacing: 1, textTransform: 'uppercase' }}>Sesiones registradas</div><div style={{ fontFamily: fontBody, fontSize: 14, fontWeight: 600 }}>{sesionesConsultante.length}</div></div>
+                  <div><div style={{ fontSize: 10, color: colors.textMuted, letterSpacing: 1, textTransform: 'uppercase' }}>Notas registradas</div><div style={{ fontFamily: fontBody, fontSize: 14, fontWeight: 600 }}>{notasConsultante.length}</div></div>
+                  {ultimaSesion && (
+                    <div style={{ gridColumn: '1 / -1' }}><div style={{ fontSize: 10, color: colors.textMuted, letterSpacing: 1, textTransform: 'uppercase' }}>Última sesión</div><div style={{ fontFamily: fontBody, fontSize: 14, fontWeight: 600 }}>{new Date(ultimaSesion.fecha).toLocaleDateString('es-MX')}</div></div>
+                  )}
+                </div>
+
+                <div style={{ marginBottom: 24 }}>
+                  <div style={{ fontSize: 11, letterSpacing: 2, color: colors.accent, textTransform: 'uppercase', fontWeight: 700, marginBottom: 8 }}>Motivo de Consulta</div>
+                  <div style={{ fontFamily: fontBody, fontSize: 14, lineHeight: 1.7, color: colors.text, padding: 16, background: colors.bg, borderRadius: 4, borderLeft: `3px solid ${colors.accent}`, whiteSpace: 'pre-wrap' }}>
+                    {c.motivoConsulta || <em style={{ color: colors.textMuted }}>— Sin información —</em>}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: 12, marginTop: 32, paddingTop: 24, borderTop: `1px solid ${colors.border}` }}>
+                  <button onClick={() => setConsultanteVisualizando(null)} style={{ flex: 1, background: 'transparent', color: colors.text, border: `1px solid ${colors.border}`, padding: 14, borderRadius: 4, cursor: 'pointer', fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase', fontSize: 13 }}>
+                    Cerrar
+                  </button>
+                  <button onClick={() => { editarConsultante(c); setConsultanteVisualizando(null); }} style={{ flex: 1, background: colors.primary, color: '#fff', border: 'none', padding: 14, borderRadius: 4, cursor: 'pointer', fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase', fontSize: 13 }}>
+                    Editar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* FOOTER */}
       <footer style={{ background: colors.primary, color: '#C5D2E0', padding: '24px 48px', marginTop: 60, textAlign: 'center', fontSize: 12 }}>
         <div style={{ fontFamily: fontDisplay, fontSize: 14, color: colors.accent, fontStyle: 'italic', marginBottom: 4 }}>
           Plataforma de Inteligencia Clínica de Claudia Talamantes Dosal
         </div>
-        <div>Diseñada para acompañar con rigor y sentido</div>
+        <div>Acompañando a encontrar su sentido de vida</div>
       </footer>
     </div>
   );
