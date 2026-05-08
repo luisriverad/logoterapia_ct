@@ -606,37 +606,168 @@ Te están preparando para acompañar la próxima sesión con ${consultante?.nomb
     <div style={{ minHeight: '100vh', background: colors.bg, fontFamily: fontUI, color: colors.text }}>
 
       {/* HEADER */}
-      <header style={{ background: colors.primary, color: '#fff', padding: '32px 48px', borderBottom: `3px solid ${colors.accent}` }}>
-        <div style={{ maxWidth: 1400, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <h1 style={{ fontFamily: fontDisplay, fontSize: 36, margin: 0, fontWeight: 500, letterSpacing: '-0.5px' }}>
-              CLAUDIA TALAMANTES DOSAL — Logoterapeuta
-            </h1>
-            <div style={{ fontSize: 13, color: '#C5D2E0', marginTop: 6, fontStyle: 'italic', fontFamily: fontBody }}>
-              "El sentido se descubre, no se inventa." — V. Frankl
+      <header
+        style={{
+          position: 'relative',
+          color: '#F5EFE0',
+          padding: '28px 48px',
+          background: 'radial-gradient(120% 100% at 0% 0%, #284B7A 0%, #1E3A5F 50%, #0F1E33 100%)',
+          borderBottom: `1px solid rgba(201,162,74,0.45)`,
+          boxShadow: '0 1px 0 rgba(245,239,224,0.06) inset, 0 6px 18px rgba(15,30,51,0.18)',
+          overflow: 'hidden'
+        }}
+      >
+        {/* Hairline dorado inferior */}
+        <div
+          aria-hidden
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: 2,
+            background: 'linear-gradient(to right, transparent 0%, #C9A24A 18%, #E9C77B 50%, #C9A24A 82%, transparent 100%)'
+          }}
+        />
+        {/* Glow decorativo */}
+        <div
+          aria-hidden
+          style={{
+            position: 'absolute',
+            top: -80,
+            right: -80,
+            width: 280,
+            height: 280,
+            borderRadius: '50%',
+            background: 'radial-gradient(circle, rgba(201,162,74,0.18), transparent 65%)',
+            pointerEvents: 'none'
+          }}
+        />
+
+        <div style={{ position: 'relative', maxWidth: 1400, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 24 }}>
+          {/* IZQUIERDA: monograma + identidad */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 18, minWidth: 0 }}>
+            <svg width="56" height="56" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden style={{ flexShrink: 0 }}>
+              <defs>
+                <linearGradient id="hdrGold" x1="0" y1="0" x2="120" y2="120" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stopColor="#E9C77B" />
+                  <stop offset="55%" stopColor="#C9A24A" />
+                  <stop offset="100%" stopColor="#8C6A28" />
+                </linearGradient>
+              </defs>
+              <circle cx="60" cy="60" r="56" stroke="rgba(245,239,224,0.18)" strokeWidth="1.5" />
+              <circle cx="60" cy="60" r="49" stroke="#C9A24A" strokeOpacity="0.55" strokeWidth="0.75" />
+              <path d="M78 38 C 66 30, 48 32, 40 44 C 32 56, 34 72, 44 80 C 54 88, 70 88, 78 82" stroke="url(#hdrGold)" strokeWidth="3.5" strokeLinecap="round" fill="none" />
+              <path d="M50 50 H 88 M 69 50 V 92" stroke="url(#hdrGold)" strokeWidth="3.5" strokeLinecap="round" fill="none" />
+            </svg>
+
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 10, letterSpacing: '0.36em', textTransform: 'uppercase', color: '#C9A24A', fontWeight: 600, marginBottom: 4 }}>
+                Logoterapia · Consulta Privada
+              </div>
+              <h1 style={{
+                fontFamily: "'Cormorant Garamond', Georgia, serif",
+                fontSize: 30,
+                lineHeight: 1.05,
+                margin: 0,
+                fontWeight: 500,
+                letterSpacing: '-0.01em',
+                color: '#F5EFE0',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis'
+              }}>
+                Claudia <span style={{ fontStyle: 'italic', color: '#E9C77B' }}>Talamantes</span> Dosal
+              </h1>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
+                <span style={{ display: 'inline-block', width: 22, height: 1, background: '#C9A24A' }} />
+                <span style={{ fontSize: 11, letterSpacing: '0.22em', textTransform: 'uppercase', color: '#E0D8C4' }}>
+                  Logoterapeuta
+                </span>
+              </div>
             </div>
           </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 12 }}>
-              <div style={{ fontSize: 12, color: colors.accentSoft }}>SESIÓN ACTIVA</div>
+
+          {/* CENTRO: cita Frankl */}
+          <div style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            justifyContent: 'center',
+            alignItems: 'center',
+            padding: '0 32px',
+            minWidth: 0
+          }}>
+            <div style={{
+              fontFamily: "'Cormorant Garamond', Georgia, serif",
+              fontStyle: 'italic',
+              fontSize: 'clamp(20px, 2vw, 28px)',
+              lineHeight: 1.25,
+              color: '#F5EFE0',
+              letterSpacing: '0.005em',
+              textAlign: 'center',
+              fontWeight: 500
+            }}>
+              “El sentido se descubre, no se inventa.”
+            </div>
+            <div style={{
+              marginTop: 6,
+              fontSize: 10,
+              letterSpacing: '0.36em',
+              textTransform: 'uppercase',
+              color: '#C9A24A',
+              fontWeight: 600
+            }}>
+              Viktor E. Frankl
+            </div>
+          </div>
+
+          {/* DERECHA: estado + fecha + salir */}
+          <div style={{ textAlign: 'right', flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10 }}>
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '5px 12px',
+                  borderRadius: 999,
+                  background: 'rgba(201,162,74,0.12)',
+                  border: '1px solid rgba(201,162,74,0.45)',
+                  fontSize: 10,
+                  letterSpacing: '0.24em',
+                  textTransform: 'uppercase',
+                  color: '#E9C77B',
+                  fontWeight: 600
+                }}
+              >
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#E9C77B', boxShadow: '0 0 0 3px rgba(233,199,123,0.18)' }} />
+                Sesión activa
+              </span>
               <button
                 onClick={() => supabase.auth.signOut()}
                 style={{
                   background: 'transparent',
-                  border: `1px solid rgba(255,255,255,0.35)`,
-                  color: '#fff',
-                  padding: '8px 12px',
-                  borderRadius: 10,
+                  border: '1px solid rgba(245,239,224,0.35)',
+                  color: '#F5EFE0',
+                  padding: '7px 14px',
+                  borderRadius: 999,
                   cursor: 'pointer',
-                  fontSize: 13,
-                  fontFamily: fontUI
+                  fontSize: 12,
+                  letterSpacing: '0.06em',
+                  fontFamily: fontUI,
+                  transition: 'background 120ms ease, border-color 120ms ease'
                 }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(201,162,74,0.12)'; e.currentTarget.style.borderColor = 'rgba(201,162,74,0.5)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'rgba(245,239,224,0.35)'; }}
                 title="Cerrar sesión"
               >
                 Salir
               </button>
             </div>
-            <div style={{ fontSize: 14, fontFamily: fontBody, marginTop: 6 }}>{new Date().toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</div>
+            <div style={{ fontSize: 12, fontFamily: fontBody, marginTop: 8, color: '#C5D2E0', letterSpacing: '0.04em' }}>
+              {new Date().toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+            </div>
           </div>
         </div>
       </header>
@@ -942,8 +1073,11 @@ Te están preparando para acompañar la próxima sesión con ${consultante?.nomb
                   {diasMes.map((d, i) => {
                     if (!d) return <div key={i} style={{ minHeight: 110, background: colors.soft, borderRight: `1px solid ${colors.border}`, borderBottom: `1px solid ${colors.border}` }} />;
                     const esHoy = formatoFecha(d) === formatoFecha(new Date());
+                    const inicioHoy = new Date(); inicioHoy.setHours(0, 0, 0, 0);
+                    const esPasado = d < inicioHoy && !esHoy;
                     const citasDia = citasDelDia(formatoFecha(d));
                     const fechaD = formatoFecha(d);
+                    const bgDia = esHoy ? colors.accentSoft : esPasado ? '#FAF5E8' : colors.cardBg;
                     return (
                       <div
                         key={i}
@@ -954,10 +1088,10 @@ Te están preparando para acompañar la próxima sesión con ${consultante?.nomb
                           const id = e.dataTransfer.getData('text/cita-id');
                           if (id) moverCita(id, fechaD, null);
                         }}
-                        style={{ minHeight: 110, padding: 8, borderRight: `1px solid ${colors.border}`, borderBottom: `1px solid ${colors.border}`, background: esHoy ? colors.accentSoft : colors.cardBg, cursor: 'pointer' }}
+                        style={{ minHeight: 110, padding: 8, borderRight: `1px solid ${colors.border}`, borderBottom: `1px solid ${colors.border}`, background: bgDia, cursor: 'pointer' }}
                         title="Clic para agendar · suelta una cita aquí para moverla a este día"
                       >
-                        <div style={{ fontFamily: fontDisplay, fontSize: 16, fontWeight: 600, color: esHoy ? colors.primary : colors.text, marginBottom: 4 }}>{d.getDate()}</div>
+                        <div style={{ fontFamily: fontDisplay, fontSize: 16, fontWeight: 600, color: esHoy ? colors.primary : esPasado ? colors.textMuted : colors.text, opacity: esPasado ? 0.75 : 1, marginBottom: 4 }}>{d.getDate()}</div>
                         {citasDia.slice(0, 3).map(cita => (
                           <div
                             key={cita.id}
