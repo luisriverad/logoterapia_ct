@@ -327,13 +327,16 @@ Te están preparando para acompañar la próxima sesión con ${consultante?.nomb
       return;
     }
     const consultante = consultantes.find(c => c.id === reporteSesion.consultanteId);
+    const totalSesionesGlobal = (reporteEditando && reporteSesion.totalSesiones)
+      ? reporteSesion.totalSesiones
+      : String(72 + sesiones.length + (reporteEditando ? 0 : 1));
     let reporteGuardado;
     let actualizados;
     if (reporteEditando) {
-      reporteGuardado = { ...reporteSesion, id: reporteEditando, consultanteNombre: consultante?.nombre, edad: consultante?.edad };
+      reporteGuardado = { ...reporteSesion, totalSesiones: totalSesionesGlobal, id: reporteEditando, consultanteNombre: consultante?.nombre, edad: consultante?.edad };
       actualizados = sesiones.map(s => s.id === reporteEditando ? reporteGuardado : s);
     } else {
-      reporteGuardado = { ...reporteSesion, id: `r_${Date.now()}`, consultanteNombre: consultante?.nombre, edad: consultante?.edad, fechaCreacion: new Date().toISOString() };
+      reporteGuardado = { ...reporteSesion, totalSesiones: totalSesionesGlobal, id: `r_${Date.now()}`, consultanteNombre: consultante?.nombre, edad: consultante?.edad, fechaCreacion: new Date().toISOString() };
       actualizados = [...sesiones, reporteGuardado];
     }
     setSesiones(actualizados);
@@ -509,7 +512,7 @@ Te están preparando para acompañar la próxima sesión con ${consultante?.nomb
 
   const formatoFecha = (d) => d.toISOString().split('T')[0];
   const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
-  const dias = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+  const dias = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
   const horarios = [];
   for (let h = 8; h <= 21; h++) {
@@ -530,7 +533,7 @@ Te están preparando para acompañar la próxima sesión con ${consultante?.nomb
   const diasMes = useMemo(() => {
     const año = fechaActual.getFullYear();
     const mes = fechaActual.getMonth();
-    const primerDia = new Date(año, mes, 1).getDay();
+    const primerDia = (new Date(año, mes, 1).getDay() + 6) % 7;
     const ultimoDia = new Date(año, mes + 1, 0).getDate();
     const dias = [];
     for (let i = 0; i < primerDia; i++) dias.push(null);
@@ -540,7 +543,7 @@ Te están preparando para acompañar la próxima sesión con ${consultante?.nomb
 
   const semanaActual = useMemo(() => {
     const inicio = new Date(fechaActual);
-    inicio.setDate(inicio.getDate() - inicio.getDay());
+    inicio.setDate(inicio.getDate() - ((inicio.getDay() + 6) % 7));
     return Array.from({ length: 7 }, (_, i) => {
       const d = new Date(inicio);
       d.setDate(d.getDate() + i);
@@ -1004,13 +1007,14 @@ Te están preparando para acompañar la próxima sesión con ${consultante?.nomb
             {/* Vista Semanal */}
             {vistaCalendario === 'semanal' && (
               <div style={{ background: colors.cardBg, borderRadius: 8, border: `1px solid ${colors.border}`, overflow: 'hidden' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '70px repeat(7, 1fr)', borderBottom: `1px solid ${colors.border}` }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '70px repeat(5, 1fr) 0.5fr 0.5fr', borderBottom: `1px solid ${colors.border}` }}>
                   <div style={{ background: colors.soft, borderRight: `1px solid ${colors.border}` }} />
                   {semanaActual.map((d, i) => {
                     const esHoy = formatoFecha(d) === formatoFecha(new Date());
+                    const esFinDeSemana = d.getDay() === 0 || d.getDay() === 6;
                     return (
-                      <div key={i} style={{ padding: 12, background: esHoy ? colors.primary : colors.soft, color: esHoy ? '#fff' : colors.text, textAlign: 'center', borderRight: i < 6 ? `1px solid ${colors.border}` : 'none' }}>
-                        <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, opacity: 0.8 }}>{dias[d.getDay()]}</div>
+                      <div key={i} style={{ padding: 12, background: esHoy ? colors.primary : esFinDeSemana ? '#DCDCDC' : colors.soft, color: esHoy ? '#fff' : colors.text, textAlign: 'center', borderRight: i < 6 ? `1px solid ${colors.border}` : 'none' }}>
+                        <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, opacity: 0.8 }}>{dias[(d.getDay() + 6) % 7]}</div>
                         <div style={{ fontFamily: fontDisplay, fontSize: 22, fontWeight: 600 }}>{d.getDate()}</div>
                       </div>
                     );
@@ -1020,13 +1024,14 @@ Te están preparando para acompañar la próxima sesión con ${consultante?.nomb
                   {horarios.map((slot) => {
                     const esHora = slot.endsWith(':00');
                     return (
-                      <div key={slot} style={{ display: 'grid', gridTemplateColumns: '70px repeat(7, 1fr)', borderBottom: esHora ? `1px solid ${colors.border}` : `1px dashed ${colors.border}` }}>
+                      <div key={slot} style={{ display: 'grid', gridTemplateColumns: '70px repeat(5, 1fr) 0.5fr 0.5fr', borderBottom: esHora ? `1px solid ${colors.border}` : `1px dashed ${colors.border}` }}>
                         <div style={{ padding: '4px 8px', textAlign: 'right', fontSize: 11, color: colors.textMuted, background: colors.soft, borderRight: `1px solid ${colors.border}`, fontWeight: esHora ? 600 : 400 }}>
                           {slot}
                         </div>
                         {semanaActual.map((d, i) => {
                           const fechaD = formatoFecha(d);
                           const citasSlot = citas.filter(c => c.fecha === fechaD && slotDeCita(c.hora) === slot);
+                          const esFinDeSemana = d.getDay() === 0 || d.getDay() === 6;
                           return (
                             <div
                               key={i}
@@ -1037,7 +1042,7 @@ Te están preparando para acompañar la próxima sesión con ${consultante?.nomb
                                 const id = e.dataTransfer.getData('text/cita-id');
                                 if (id) moverCita(id, fechaD, slot);
                               }}
-                              style={{ minHeight: 28, borderRight: i < 6 ? `1px solid ${colors.border}` : 'none', padding: 2, cursor: 'pointer' }}
+                              style={{ minHeight: 28, borderRight: i < 6 ? `1px solid ${colors.border}` : 'none', padding: 2, cursor: 'pointer', background: esFinDeSemana ? '#ECECEC' : 'transparent' }}
                               title={`Clic para agendar a las ${slot} · suelta una cita aquí para moverla`}
                             >
                               {citasSlot.map(cita => (
@@ -1064,20 +1069,21 @@ Te están preparando para acompañar la próxima sesión con ${consultante?.nomb
             {/* Vista Mensual */}
             {vistaCalendario === 'mensual' && (
               <div style={{ background: colors.cardBg, borderRadius: 8, border: `1px solid ${colors.border}`, overflow: 'hidden' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', background: colors.primary, color: '#fff' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr) 0.5fr 0.5fr', background: colors.primary, color: '#fff' }}>
                   {dias.map(d => (
                     <div key={d} style={{ padding: 12, textAlign: 'center', fontSize: 11, letterSpacing: 1, fontWeight: 600 }}>{d.toUpperCase()}</div>
                   ))}
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr) 0.5fr 0.5fr' }}>
                   {diasMes.map((d, i) => {
                     if (!d) return <div key={i} style={{ minHeight: 110, background: colors.soft, borderRight: `1px solid ${colors.border}`, borderBottom: `1px solid ${colors.border}` }} />;
                     const esHoy = formatoFecha(d) === formatoFecha(new Date());
                     const inicioHoy = new Date(); inicioHoy.setHours(0, 0, 0, 0);
                     const esPasado = d < inicioHoy && !esHoy;
+                    const esFinDeSemana = d.getDay() === 0 || d.getDay() === 6;
                     const citasDia = citasDelDia(formatoFecha(d));
                     const fechaD = formatoFecha(d);
-                    const bgDia = esHoy ? colors.accentSoft : esPasado ? '#FAF5E8' : colors.cardBg;
+                    const bgDia = esHoy ? colors.accentSoft : esFinDeSemana ? '#ECECEC' : esPasado ? '#FAF5E8' : colors.cardBg;
                     return (
                       <div
                         key={i}
@@ -1841,7 +1847,7 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
                     <input
                       type="number"
                       value={reporteSesion.consultaDe}
-                      onChange={(e) => setReporteSesion({ ...reporteSesion, consultaDe: e.target.value, totalSesiones: e.target.value })}
+                      onChange={(e) => setReporteSesion({ ...reporteSesion, consultaDe: e.target.value })}
                       placeholder="10"
                       style={{ width: 70, padding: '8px 12px', border: `1px solid ${colors.border}`, borderRadius: 4, fontSize: 16, fontFamily: fontDisplay, fontWeight: 600, color: colors.primary, background: '#fff', outline: 'none', textAlign: 'center', boxSizing: 'border-box' }}
                     />
@@ -1856,7 +1862,7 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
                   </label>
                   <input
                     type="number"
-                    value={reporteSesion.consultaDe}
+                    value={(reporteEditando && reporteSesion.totalSesiones) ? reporteSesion.totalSesiones : 72 + sesiones.length + (reporteEditando ? 0 : 1)}
                     readOnly
                     style={{ width: '100%', padding: '12px 14px', border: `1px solid ${colors.border}`, borderRadius: 4, fontSize: 14, fontFamily: fontBody, background: colors.soft, outline: 'none', boxSizing: 'border-box', color: colors.primary, fontWeight: 600 }}
                   />
@@ -2223,7 +2229,7 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
         <div style={{ fontFamily: fontDisplay, fontSize: 14, color: colors.accent, fontStyle: 'italic', marginBottom: 4 }}>
           Plataforma de Inteligencia Clínica de Claudia Talamantes Dosal
         </div>
-        <div>Diseñada para acompañar con rigor y sentido</div>
+        <div>Diseñada para acompañar con escucha y sentido</div>
       </footer>
     </div>
   );
