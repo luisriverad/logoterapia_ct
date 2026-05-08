@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Calendar, UserPlus, FileText, Search, Phone, MessageCircle, Save, Trash2, Eye, Download, ChevronLeft, ChevronRight, Clock, User, Hash, X, Archive, NotebookPen, ArrowRight, StickyNote, Sparkles, Send, Brain, RefreshCw, Key } from 'lucide-react';
+import { useAuth } from './auth/AuthProvider.jsx';
+import Login from './auth/Login.jsx';
+import { supabase } from './lib/supabaseClient.js';
 
 const App = () => {
   // ============ ESTADO PRINCIPAL ============
@@ -579,6 +582,8 @@ Te están preparando para acompañar la próxima sesión con ${consultante?.nomb
   const fontBody = "'Inter', 'Helvetica Neue', Arial, system-ui, sans-serif";
   const fontUI = "'Inter', 'Helvetica Neue', Arial, system-ui, sans-serif";
 
+  const { session, authLoading } = useAuth();
+
   if (loading) {
     return (
       <div style={{ minHeight: '100vh', background: colors.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: fontUI }}>
@@ -586,6 +591,16 @@ Te están preparando para acompañar la próxima sesión con ${consultante?.nomb
       </div>
     );
   }
+
+  if (authLoading) {
+    return (
+      <div style={{ minHeight: '100vh', background: colors.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: fontUI }}>
+        <div style={{ color: colors.primary, fontSize: 18 }}>Validando sesión...</div>
+      </div>
+    );
+  }
+
+  if (!session) return <Login />;
 
   return (
     <div style={{ minHeight: '100vh', background: colors.bg, fontFamily: fontUI, color: colors.text }}>
@@ -602,8 +617,26 @@ Te están preparando para acompañar la próxima sesión con ${consultante?.nomb
             </div>
           </div>
           <div style={{ textAlign: 'right' }}>
-            <div style={{ fontSize: 12, color: colors.accentSoft, marginBottom: 4 }}>SESIÓN ACTIVA</div>
-            <div style={{ fontSize: 14, fontFamily: fontBody }}>{new Date().toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 12 }}>
+              <div style={{ fontSize: 12, color: colors.accentSoft }}>SESIÓN ACTIVA</div>
+              <button
+                onClick={() => supabase.auth.signOut()}
+                style={{
+                  background: 'transparent',
+                  border: `1px solid rgba(255,255,255,0.35)`,
+                  color: '#fff',
+                  padding: '8px 12px',
+                  borderRadius: 10,
+                  cursor: 'pointer',
+                  fontSize: 13,
+                  fontFamily: fontUI
+                }}
+                title="Cerrar sesión"
+              >
+                Salir
+              </button>
+            </div>
+            <div style={{ fontSize: 14, fontFamily: fontBody, marginTop: 6 }}>{new Date().toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</div>
           </div>
         </div>
       </header>
