@@ -59,6 +59,7 @@ const App = () => {
   const [filtroConsultante, setFiltroConsultante] = useState('');
   const [busqueda, setBusqueda] = useState('');
   const [reporteVisualizando, setReporteVisualizando] = useState(null);
+  const [vistaArchivo, setVistaArchivo] = useState(null); // null | 'notas' | 'reportes'
 
   // ============ CARGA INICIAL ============
   useEffect(() => {
@@ -2114,7 +2115,7 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
                 Archivo Clínico
               </h2>
               <p style={{ color: colors.textMuted, marginTop: 4, fontSize: 14 }}>
-                {sesiones.length} {sesiones.length === 1 ? 'reporte archivado' : 'reportes archivados'} · Consulta histórica del proceso terapéutico
+                {sesiones.length + notas.length} {(sesiones.length + notas.length) === 1 ? 'registro archivado' : 'registros archivados'} · Consulta histórica del proceso terapéutico
               </p>
             </div>
 
@@ -2122,7 +2123,10 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
             <div style={{ background: colors.cardBg, padding: 20, borderRadius: 8, border: `1px solid ${colors.border}`, marginBottom: 20, display: 'grid', gridTemplateColumns: filtroConsultante ? 'auto 2fr' : '1fr', gap: 16, alignItems: 'center' }}>
               {filtroConsultante && (
                 <button
-                  onClick={() => { setFiltroConsultante(''); setBusqueda(''); }}
+                  onClick={() => {
+                    if (vistaArchivo) { setVistaArchivo(null); }
+                    else { setFiltroConsultante(''); setBusqueda(''); }
+                  }}
                   style={{ padding: '12px 16px', border: `1px solid ${colors.border}`, borderRadius: 4, fontSize: 13, fontFamily: fontBody, background: 'transparent', color: colors.text, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
                 >
                   <ChevronLeft size={14} /> Volver
@@ -2151,10 +2155,12 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 14 }}>
                   {consultantes.map(c => {
                     const countReportes = sesiones.filter(s => s.consultanteId === c.id).length;
+                    const countNotas = notas.filter(n => n.consultanteId === c.id).length;
+                    const total = countReportes + countNotas;
                     return (
                       <button
                         key={c.id}
-                        onClick={() => setFiltroConsultante(c.id)}
+                        onClick={() => { setFiltroConsultante(c.id); setVistaArchivo(null); }}
                         style={{ background: colors.cardBg, padding: 22, borderRadius: 8, border: `1px solid ${colors.border}`, borderLeft: `4px solid ${colors.primary}`, cursor: 'pointer', textAlign: 'left', fontFamily: fontBody, display: 'flex', flexDirection: 'column', gap: 10, transition: 'transform 0.1s, box-shadow 0.1s' }}
                         onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
                         onMouseLeave={(e) => { e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.transform = 'translateY(0)'; }}
@@ -2169,60 +2175,151 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
                         </div>
                         <div style={{ fontSize: 12, color: colors.textMuted, display: 'flex', alignItems: 'center', gap: 6 }}>
                           <Archive size={12} />
-                          {countReportes} {countReportes === 1 ? 'reporte archivado' : 'reportes archivados'}
+                          {total} {total === 1 ? 'registro' : 'registros'} · {countReportes} {countReportes === 1 ? 'reporte' : 'reportes'} · {countNotas} {countNotas === 1 ? 'nota' : 'notas'}
                         </div>
                       </button>
                     );
                   })}
                 </div>
               )
-            ) : (
+            ) : (filtroConsultante && !busqueda && !vistaArchivo) ? (
+              (() => {
+                const consultanteSel = consultantes.find(c => c.id === filtroConsultante);
+                const countReportes = sesiones.filter(s => s.consultanteId === filtroConsultante).length;
+                const countNotas = notas.filter(n => n.consultanteId === filtroConsultante).length;
+                return (
+                  <div>
+                    <h3 style={{ fontFamily: fontDisplay, fontSize: 24, color: colors.primary, fontWeight: 500, textAlign: 'center', marginTop: 24, marginBottom: 8 }}>
+                      Expediente de {consultanteSel?.nombre || 'consultante'}
+                    </h3>
+                    <p style={{ textAlign: 'center', color: colors.textMuted, fontSize: 14, marginTop: 0, marginBottom: 32 }}>
+                      ¿Qué quieres abrir?
+                    </p>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 20, maxWidth: 800, margin: '0 auto' }}>
+                      <button
+                        onClick={() => setVistaArchivo('notas')}
+                        style={{ background: colors.cardBg, padding: '48px 32px', borderRadius: 12, border: `2px solid ${colors.border}`, borderLeft: `6px solid ${colors.accent}`, cursor: 'pointer', textAlign: 'center', fontFamily: fontBody, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, transition: 'transform 0.1s, box-shadow 0.1s' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.12)'; e.currentTarget.style.transform = 'translateY(-3px)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.transform = 'translateY(0)'; }}
+                      >
+                        <StickyNote size={56} color={colors.accent} />
+                        <div style={{ fontFamily: fontDisplay, fontSize: 26, color: colors.primary, fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase' }}>
+                          Notas
+                        </div>
+                        <div style={{ fontSize: 13, color: colors.textMuted }}>
+                          {countNotas} {countNotas === 1 ? 'nota archivada' : 'notas archivadas'}
+                        </div>
+                      </button>
+                      <button
+                        onClick={() => setVistaArchivo('reportes')}
+                        style={{ background: colors.cardBg, padding: '48px 32px', borderRadius: 12, border: `2px solid ${colors.border}`, borderLeft: `6px solid ${colors.primary}`, cursor: 'pointer', textAlign: 'center', fontFamily: fontBody, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, transition: 'transform 0.1s, box-shadow 0.1s' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 8px 24px rgba(0,0,0,0.12)'; e.currentTarget.style.transform = 'translateY(-3px)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.transform = 'translateY(0)'; }}
+                      >
+                        <FileText size={56} color={colors.primary} />
+                        <div style={{ fontFamily: fontDisplay, fontSize: 26, color: colors.primary, fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase' }}>
+                          Reportes Enviados
+                        </div>
+                        <div style={{ fontSize: 13, color: colors.textMuted }}>
+                          {countReportes} {countReportes === 1 ? 'reporte archivado' : 'reportes archivados'}
+                        </div>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()
+            ) : (() => {
+              const incluirReportes = !filtroConsultante || busqueda || vistaArchivo === 'reportes';
+              const incluirNotas = filtroConsultante && !busqueda && vistaArchivo === 'notas';
+              const archivoItems = [
+                ...(incluirReportes ? reportesFiltrados.map(r => ({ ...r, _tipo: 'reporte' })) : []),
+                ...(incluirNotas
+                  ? notas
+                      .filter(n => n.consultanteId === filtroConsultante)
+                      .map(n => ({ ...n, _tipo: 'nota' }))
+                  : [])
+              ].sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+              return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {reportesFiltrados.length === 0 ? (
+              {archivoItems.length === 0 ? (
                 <div style={{ background: colors.cardBg, padding: 60, textAlign: 'center', border: `1px dashed ${colors.border}`, borderRadius: 8, color: colors.textMuted }}>
                   <Archive size={48} style={{ opacity: 0.3, marginBottom: 12 }} />
-                  <p>{sesiones.length === 0 ? 'Aún no hay reportes archivados' : 'Sin resultados para este filtro'}</p>
+                  <p>{(sesiones.length + notas.length) === 0 ? 'Aún no hay registros archivados' : 'Sin resultados para este filtro'}</p>
                 </div>
               ) : (
-                reportesFiltrados.map(r => (
-                  <div key={r.id} style={{ background: colors.cardBg, padding: 24, borderRadius: 8, border: `1px solid ${colors.border}`, borderLeft: `4px solid ${colors.primary}` }}>
+                archivoItems.map(item => item._tipo === 'reporte' ? (
+                  <div key={`r_${item.id}`} style={{ background: colors.cardBg, padding: 24, borderRadius: 8, border: `1px solid ${colors.border}`, borderLeft: `4px solid ${colors.primary}` }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
                       <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                          <span style={{ fontSize: 9, letterSpacing: 1.5, textTransform: 'uppercase', fontWeight: 700, background: colors.primary, color: '#fff', padding: '3px 8px', borderRadius: 3 }}>Reporte</span>
+                        </div>
                         <div style={{ fontFamily: fontDisplay, fontSize: 22, color: colors.primary, fontWeight: 600 }}>
-                          {r.consultanteNombre || 'Sin consultante'}
+                          {item.consultanteNombre || 'Sin consultante'}
                         </div>
                         <div style={{ display: 'flex', gap: 16, marginTop: 6, fontSize: 12, color: colors.textMuted }}>
-                          <span><Hash size={11} style={{ display: 'inline', marginRight: 4 }} />Consulta {r.sesionNum} de {r.consultaDe}</span>
-                          <span><Calendar size={11} style={{ display: 'inline', marginRight: 4 }} />{new Date(r.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
-                          {r.tiempoSesion && <span><Clock size={11} style={{ display: 'inline', marginRight: 4 }} />{r.tiempoSesion}</span>}
+                          <span><Hash size={11} style={{ display: 'inline', marginRight: 4 }} />Consulta {item.sesionNum} de {item.consultaDe}</span>
+                          <span><Calendar size={11} style={{ display: 'inline', marginRight: 4 }} />{new Date(item.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
+                          {item.tiempoSesion && <span><Clock size={11} style={{ display: 'inline', marginRight: 4 }} />{item.tiempoSesion}</span>}
                         </div>
                       </div>
                       <div style={{ display: 'flex', gap: 6 }}>
-                        <button onClick={() => setReporteVisualizando(r)} style={{ background: colors.soft, border: 'none', padding: '8px 14px', borderRadius: 4, cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <button onClick={() => setReporteVisualizando(item)} style={{ background: colors.soft, border: 'none', padding: '8px 14px', borderRadius: 4, cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
                           <Eye size={12} /> Ver
                         </button>
-                        <button onClick={() => exportarReporte(r)} style={{ background: colors.accentSoft, border: 'none', padding: '8px 14px', borderRadius: 4, cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <button onClick={() => exportarReporte(item)} style={{ background: colors.accentSoft, border: 'none', padding: '8px 14px', borderRadius: 4, cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
                           <Download size={12} /> Exportar
                         </button>
-                        <button onClick={() => cargarReporte(r)} style={{ background: 'transparent', border: `1px solid ${colors.border}`, padding: '8px 14px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>
+                        <button onClick={() => cargarReporte(item)} style={{ background: 'transparent', border: `1px solid ${colors.border}`, padding: '8px 14px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>
                           Editar
                         </button>
-                        <button onClick={() => eliminarReporte(r.id)} style={{ background: 'transparent', border: `1px solid ${colors.danger}`, color: colors.danger, padding: '8px 12px', borderRadius: 4, cursor: 'pointer' }}>
+                        <button onClick={() => eliminarReporte(item.id)} style={{ background: 'transparent', border: `1px solid ${colors.danger}`, color: colors.danger, padding: '8px 12px', borderRadius: 4, cursor: 'pointer' }}>
                           <Trash2 size={12} />
                         </button>
                       </div>
                     </div>
-                    {r.temaConsulta && (
+                    {item.temaConsulta && (
                       <div style={{ paddingTop: 12, borderTop: `1px dashed ${colors.border}`, fontSize: 13, fontFamily: fontBody, fontStyle: 'italic', color: colors.text }}>
                         <strong style={{ fontFamily: fontUI, fontStyle: 'normal', fontSize: 11, letterSpacing: 1, color: colors.textMuted, textTransform: 'uppercase' }}>Tema: </strong>
-                        {r.temaConsulta.substring(0, 200)}{r.temaConsulta.length > 200 ? '...' : ''}
+                        {item.temaConsulta.substring(0, 200)}{item.temaConsulta.length > 200 ? '...' : ''}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div key={`n_${item.id}`} style={{ background: colors.cardBg, padding: 24, borderRadius: 8, border: `1px solid ${colors.border}`, borderLeft: `4px solid ${colors.accent}` }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+                          <span style={{ fontSize: 9, letterSpacing: 1.5, textTransform: 'uppercase', fontWeight: 700, background: colors.accent, color: colors.primary, padding: '3px 8px', borderRadius: 3 }}>Nota</span>
+                        </div>
+                        <div style={{ fontFamily: fontDisplay, fontSize: 22, color: colors.primary, fontWeight: 600 }}>
+                          {item.consultanteNombre || 'Sin consultante'}
+                        </div>
+                        <div style={{ display: 'flex', gap: 16, marginTop: 6, fontSize: 12, color: colors.textMuted }}>
+                          {(item.sesionNum || item.consultaDe) && <span><Hash size={11} style={{ display: 'inline', marginRight: 4 }} />Consulta {item.sesionNum || '?'} de {item.consultaDe || '?'}</span>}
+                          <span><Calendar size={11} style={{ display: 'inline', marginRight: 4 }} />{new Date(item.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button onClick={() => { editarNota(item); setActiveTab('notas'); }} style={{ background: 'transparent', border: `1px solid ${colors.border}`, padding: '8px 14px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>
+                          Editar
+                        </button>
+                        <button onClick={() => eliminarNota(item.id)} style={{ background: 'transparent', border: `1px solid ${colors.danger}`, color: colors.danger, padding: '8px 12px', borderRadius: 4, cursor: 'pointer' }}>
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    </div>
+                    {item.contenido && (
+                      <div style={{ paddingTop: 12, borderTop: `1px dashed ${colors.border}`, fontSize: 13, fontFamily: fontBody, fontStyle: 'italic', color: colors.text, lineHeight: 1.5 }}>
+                        "{item.contenido.substring(0, 240)}{item.contenido.length > 240 ? '...' : ''}"
                       </div>
                     )}
                   </div>
                 ))
               )}
             </div>
-            )}
+              );
+            })()}
           </div>
         )}
 
