@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pkill -f \"vite\" 2>/dev/null; sleep 1; npm run dev > /tmp/vite-output.log 2>&1 & *)",
+      "Bash(curl -s -o /tmp/index-resp.html -w \"HTTP %{http_code}\\\\n\" http://localhost:5173/)",
+      "Bash(curl -s http://localhost:5173/src/main.jsx -o /tmp/main-resp.txt -w \"HTTP %{http_code}\\\\n\")"
+    ],
+    "additionalDirectories": [
+      "/tmp"
+    ]
+  }
+}

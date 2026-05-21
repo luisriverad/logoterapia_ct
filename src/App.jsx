@@ -284,28 +284,11 @@ Te están preparando para acompañar la próxima sesión con ${consultante?.nomb
       `Fecha: ${n.fecha}\nMotivo: ${n.motivoConsulta || '—'}\nTema: ${n.temaConsulta || '—'}\nNotas:\n${n.contenido || '—'}`
     )).join('\n\n---\n\n');
 
-    const systemPrompt = `Eres una terapeuta logoterapéutica con experiencia clínica que escribe un reporte breve para enviarlo a su supervisor de confianza, quien le da seguimiento al caso.
+    const systemPrompt = `Analiza las siguientes notas de sesión y genera un reporte breve con lenguaje de logoterapia, pero escrito de forma clara, humana y casual.
 
-Tono y estilo:
-- Profesional, claro, ordenado, con vocabulario clínico cuando aplica.
-- Pero coloquial, cercano y honesto: como le hablarías a un colega que te conoce y te apoya.
-- Primera persona del singular ("trabajé con…", "noté que…", "le propuse…").
-- Sin pomposidad, sin tecnicismos innecesarios, sin frases acartonadas.
-- Que se lea humano, reflexivo y directo.
+Evita tecnicismos innecesarios, lenguaje clínico exagerado o frases artificiales como "se utilizaron diálogos socráticos", "se exploró fenomenológicamente" o expresiones similares.
 
-Formato:
-- Un solo bloque de texto continuo (puede tener 2-3 párrafos cortos si ayuda a la lectura).
-- Entre 100 y 200 palabras (este rango es estricto).
-- Sin títulos, sin listas, sin viñetas, sin encabezados.
-- No inventes datos que no estén en las notas. Si algo no está, no lo digas.
-- Enfócate en: cómo llegó el consultante, qué se trabajó, qué intervención hiciste, qué notaste, y qué te queda pendiente o quieres consultar.
-
-Orientación clínica (obligatoria):
-- El reporte SIEMPRE debe estar enmarcado desde la logoterapia de Viktor Frankl. No es opcional.
-- Lee el material desde sus categorías centrales: búsqueda de sentido, valores (de creación, de experiencia, de actitud), libertad de la voluntad, responsabilidad, vacío existencial, autotrascendencia, dimensión noética, distancia de sí mismo.
-- Cuando describas tu intervención, nombra explícitamente el recurso logoterapéutico cuando aplique: diálogo socrático, derreflexión, intención paradójica, modificación de actitud, confrontación con el sentido, análisis existencial.
-- La hipótesis y lo que dejas pendiente para supervisión deben formularse en términos logoterapéuticos (qué sentido está en juego, qué valor se está bloqueando, qué actitud podría modificarse, dónde aparece la libertad o la responsabilidad).
-- No fuerces el lenguaje: úsalo solo cuando el material lo sostenga, pero la mirada siempre es logoterapéutica, no genéricamente psicológica.`;
+El reporte debe sonar como si lo escribiera un especialista en logoterapia con experiencia, pero cercano y entendible para una persona normal.`;
 
     const userPrompt = `Genera el reporte de la sesión basándote ÚNICAMENTE en las siguientes notas.
 
@@ -417,9 +400,7 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
     }
     const consultante = consultantes.find(c => c.id === reporteSesion.consultanteId);
     const motivoDelConsultante = consultante?.motivoConsulta || '';
-    const totalSesionesGlobal = (reporteEditando && reporteSesion.totalSesiones)
-      ? reporteSesion.totalSesiones
-      : String(72 + sesiones.length);
+    const totalSesionesGlobal = reporteSesion.totalSesiones || '';
     let reporteGuardado;
     let actualizados;
     if (reporteEditando) {
@@ -1781,28 +1762,61 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
                   </div>
                 </div>
 
-                {/* Filtro por consultante */}
-                <select
-                  value={filtroNotasConsultante}
-                  onChange={(e) => setFiltroNotasConsultante(e.target.value)}
-                  style={{ width: '100%', padding: '10px 14px', border: `1px solid ${colors.border}`, borderRadius: 4, fontSize: 13, fontFamily: fontBody, background: colors.cardBg, outline: 'none', cursor: 'pointer', marginBottom: 16, boxSizing: 'border-box' }}
+                {/* Vista: grilla de consultantes (sin selección) o notas del consultante seleccionado */}
+                {!filtroNotasConsultante ? (
+                  consultantes.length === 0 ? (
+                    <div style={{ background: colors.cardBg, padding: 40, textAlign: 'center', border: `1px dashed ${colors.border}`, borderRadius: 8, color: colors.textMuted }}>
+                      <User size={40} style={{ opacity: 0.3, marginBottom: 12 }} />
+                      <p style={{ fontSize: 13 }}>Aún no hay consultantes registrados</p>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12, maxHeight: 800, overflowY: 'auto', paddingRight: 4 }}>
+                      {consultantes.map(c => {
+                        const countNotas = notas.filter(n => n.consultanteId === c.id).length;
+                        return (
+                          <button
+                            key={c.id}
+                            onClick={() => setFiltroNotasConsultante(c.id)}
+                            style={{ background: colors.cardBg, padding: 18, borderRadius: 8, border: `1px solid ${colors.border}`, borderLeft: `3px solid ${colors.accent}`, cursor: 'pointer', textAlign: 'left', fontFamily: fontBody, display: 'flex', flexDirection: 'column', gap: 8, transition: 'transform 0.1s, box-shadow 0.1s' }}
+                            onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
+                            onMouseLeave={(e) => { e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.transform = 'translateY(0)'; }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <div style={{ width: 36, height: 36, borderRadius: '50%', background: colors.primary, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: fontDisplay, fontSize: 15, fontWeight: 600 }}>
+                                {c.nombre.trim().charAt(0).toUpperCase()}
+                              </div>
+                              <div style={{ fontFamily: fontDisplay, fontSize: 15, color: colors.primary, fontWeight: 600, lineHeight: 1.2 }}>
+                                {c.nombre}
+                              </div>
+                            </div>
+                            <div style={{ fontSize: 11, color: colors.textMuted, display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <StickyNote size={11} />
+                              {countNotas} {countNotas === 1 ? 'nota' : 'notas'}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )
+                ) : (
+                <>
+                <button
+                  onClick={() => setFiltroNotasConsultante('')}
+                  style={{ width: '100%', padding: '10px 14px', border: `1px solid ${colors.border}`, borderRadius: 4, fontSize: 12, fontFamily: fontBody, background: 'transparent', color: colors.text, outline: 'none', cursor: 'pointer', marginBottom: 16, boxSizing: 'border-box', display: 'flex', alignItems: 'center', gap: 6 }}
                 >
-                  <option value="">Todos los consultantes</option>
-                  {consultantes.map(c => (
-                    <option key={c.id} value={c.id}>{c.nombre}</option>
-                  ))}
-                </select>
+                  <ChevronLeft size={14} /> Volver a consultantes
+                </button>
 
                 {/* Lista */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10, maxHeight: 800, overflowY: 'auto', paddingRight: 4 }}>
-                  {notas.filter(n => !filtroNotasConsultante || n.consultanteId === filtroNotasConsultante).length === 0 ? (
+                  {notas.filter(n => n.consultanteId === filtroNotasConsultante).length === 0 ? (
                     <div style={{ background: colors.cardBg, padding: 40, textAlign: 'center', border: `1px dashed ${colors.border}`, borderRadius: 8, color: colors.textMuted }}>
                       <StickyNote size={40} style={{ opacity: 0.3, marginBottom: 12 }} />
-                      <p style={{ fontSize: 13 }}>{notas.length === 0 ? 'Aún no hay notas guardadas' : 'Sin notas para este consultante'}</p>
+                      <p style={{ fontSize: 13 }}>Sin notas para este consultante</p>
                     </div>
                   ) : (
                     notas
-                      .filter(n => !filtroNotasConsultante || n.consultanteId === filtroNotasConsultante)
+                      .filter(n => n.consultanteId === filtroNotasConsultante)
                       .sort((a, b) => new Date(b.fecha) - new Date(a.fecha))
                       .map(n => (
                         <div key={n.id} style={{ background: colors.cardBg, padding: 16, borderRadius: 6, border: `1px solid ${colors.border}`, borderLeft: `3px solid ${colors.accent}` }}>
@@ -1839,6 +1853,8 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
                       ))
                   )}
                 </div>
+                </>
+                )}
               </div>
             </div>
           </div>
@@ -1965,9 +1981,10 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
                   </label>
                   <input
                     type="number"
-                    value={(reporteEditando && reporteSesion.totalSesiones) ? reporteSesion.totalSesiones : 72 + sesiones.length}
-                    readOnly
-                    style={{ width: '100%', padding: '12px 14px', border: `1px solid ${colors.border}`, borderRadius: 4, fontSize: 14, fontFamily: fontBody, background: colors.soft, outline: 'none', boxSizing: 'border-box', color: colors.primary, fontWeight: 600 }}
+                    value={reporteSesion.totalSesiones}
+                    onChange={(e) => setReporteSesion({ ...reporteSesion, totalSesiones: e.target.value })}
+                    placeholder="Ingresa el total de sesiones"
+                    style={{ width: '100%', padding: '12px 14px', border: `1px solid ${colors.border}`, borderRadius: 4, fontSize: 14, fontFamily: fontBody, background: '#fff', outline: 'none', boxSizing: 'border-box', color: colors.primary, fontWeight: 600 }}
                   />
                 </div>
               </div>
@@ -2034,9 +2051,6 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
                   rows={10}
                   style={{ width: '100%', padding: '14px 16px', border: `1px solid ${colors.border}`, borderRadius: 4, fontSize: 14, fontFamily: fontBody, background: colors.bg, outline: 'none', resize: 'vertical', boxSizing: 'border-box', lineHeight: 1.6 }}
                 />
-                <div style={{ marginTop: 8, fontSize: 11, color: colors.textMuted, fontStyle: 'italic' }}>
-                  El botón "Generar con IA" toma las notas registradas para este consultante y fecha (o la nota más reciente si no hay coincidencia exacta) y produce un reporte de 100-200 palabras con tono profesional y coloquial.
-                </div>
               </div>
 
               {/* SECCIÓN 4 */}
@@ -2104,8 +2118,16 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
               </p>
             </div>
 
-            {/* Filtros */}
-            <div style={{ background: colors.cardBg, padding: 20, borderRadius: 8, border: `1px solid ${colors.border}`, marginBottom: 20, display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 16 }}>
+            {/* Barra superior: buscador + (si hay consultante seleccionado) botón volver */}
+            <div style={{ background: colors.cardBg, padding: 20, borderRadius: 8, border: `1px solid ${colors.border}`, marginBottom: 20, display: 'grid', gridTemplateColumns: filtroConsultante ? 'auto 2fr' : '1fr', gap: 16, alignItems: 'center' }}>
+              {filtroConsultante && (
+                <button
+                  onClick={() => { setFiltroConsultante(''); setBusqueda(''); }}
+                  style={{ padding: '12px 16px', border: `1px solid ${colors.border}`, borderRadius: 4, fontSize: 13, fontFamily: fontBody, background: 'transparent', color: colors.text, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
+                >
+                  <ChevronLeft size={14} /> Volver
+                </button>
+              )}
               <div style={{ position: 'relative' }}>
                 <Search size={16} style={{ position: 'absolute', left: 14, top: 14, color: colors.textMuted }} />
                 <input
@@ -2116,19 +2138,45 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
                   style={{ width: '100%', padding: '12px 14px 12px 40px', border: `1px solid ${colors.border}`, borderRadius: 4, fontSize: 14, fontFamily: fontBody, background: colors.bg, outline: 'none', boxSizing: 'border-box' }}
                 />
               </div>
-              <select
-                value={filtroConsultante}
-                onChange={(e) => setFiltroConsultante(e.target.value)}
-                style={{ width: '100%', padding: '12px 14px', border: `1px solid ${colors.border}`, borderRadius: 4, fontSize: 14, fontFamily: fontBody, background: colors.bg, outline: 'none', cursor: 'pointer' }}
-              >
-                <option value="">Todos los consultantes</option>
-                {consultantes.map(c => (
-                  <option key={c.id} value={c.id}>{c.nombre}</option>
-                ))}
-              </select>
             </div>
 
-            {/* Lista de reportes */}
+            {/* Vista: grilla de consultantes o lista de reportes */}
+            {!filtroConsultante && !busqueda ? (
+              consultantes.length === 0 ? (
+                <div style={{ background: colors.cardBg, padding: 60, textAlign: 'center', border: `1px dashed ${colors.border}`, borderRadius: 8, color: colors.textMuted }}>
+                  <User size={48} style={{ opacity: 0.3, marginBottom: 12 }} />
+                  <p>Aún no hay consultantes registrados</p>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 14 }}>
+                  {consultantes.map(c => {
+                    const countReportes = sesiones.filter(s => s.consultanteId === c.id).length;
+                    return (
+                      <button
+                        key={c.id}
+                        onClick={() => setFiltroConsultante(c.id)}
+                        style={{ background: colors.cardBg, padding: 22, borderRadius: 8, border: `1px solid ${colors.border}`, borderLeft: `4px solid ${colors.primary}`, cursor: 'pointer', textAlign: 'left', fontFamily: fontBody, display: 'flex', flexDirection: 'column', gap: 10, transition: 'transform 0.1s, box-shadow 0.1s' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.boxShadow = 'none'; e.currentTarget.style.transform = 'translateY(0)'; }}
+                      >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          <div style={{ width: 44, height: 44, borderRadius: '50%', background: colors.primary, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: fontDisplay, fontSize: 18, fontWeight: 600 }}>
+                            {c.nombre.trim().charAt(0).toUpperCase()}
+                          </div>
+                          <div style={{ fontFamily: fontDisplay, fontSize: 17, color: colors.primary, fontWeight: 600, lineHeight: 1.2 }}>
+                            {c.nombre}
+                          </div>
+                        </div>
+                        <div style={{ fontSize: 12, color: colors.textMuted, display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <Archive size={12} />
+                          {countReportes} {countReportes === 1 ? 'reporte archivado' : 'reportes archivados'}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )
+            ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
               {reportesFiltrados.length === 0 ? (
                 <div style={{ background: colors.cardBg, padding: 60, textAlign: 'center', border: `1px dashed ${colors.border}`, borderRadius: 8, color: colors.textMuted }}>
@@ -2174,6 +2222,7 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
                 ))
               )}
             </div>
+            )}
           </div>
         )}
 
