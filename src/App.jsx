@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Calendar, UserPlus, FileText, Search, Phone, MessageCircle, Save, Trash2, Eye, Download, ChevronLeft, ChevronRight, Clock, User, Hash, X, Archive, NotebookPen, ArrowRight, StickyNote, Sparkles, Send, Brain, RefreshCw, Key } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { Calendar, UserPlus, FileText, Search, Phone, MessageCircle, Save, Trash2, Eye, Download, ChevronLeft, ChevronRight, Clock, User, Hash, X, Archive, NotebookPen, ArrowRight, StickyNote, Sparkles, Send, Brain, RefreshCw, Key, Mic, MicOff } from 'lucide-react';
 import { useAuth } from './auth/AuthProvider.jsx';
 import Login from './auth/Login.jsx';
 import { supabase } from './lib/supabaseClient.js';
@@ -45,6 +45,203 @@ const App = () => {
   });
   const [notaEditando, setNotaEditando] = useState(null);
   const [filtroNotasConsultante, setFiltroNotasConsultante] = useState('');
+  const [dictando, setDictando] = useState(false);
+  const [dictadoAviso, setDictadoAviso] = useState('');
+  const [dictadoSoportado, setDictadoSoportado] = useState(true);
+  const recognitionRef = useRef(null);
+  const dictadoBaseRef = useRef('');
+  const dictandoRef = useRef(false);
+  const reinicioDictadoTimerRef = useRef(null);
+
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setDictadoSoportado(false);
+    }
+    return () => {
+      dictandoRef.current = false;
+      if (reinicioDictadoTimerRef.current) {
+        clearTimeout(reinicioDictadoTimerRef.current);
+        reinicioDictadoTimerRef.current = null;
+      }
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch (e) { /* noop */ }
+        recognitionRef.current = null;
+      }
+    };
+  }, []);
+
+  const detenerDictado = () => {
+    dictandoRef.current = false;
+    setDictadoAviso('');
+    if (reinicioDictadoTimerRef.current) {
+      clearTimeout(reinicioDictadoTimerRef.current);
+      reinicioDictadoTimerRef.current = null;
+    }
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch (e) { /* noop */ }
+      recognitionRef.current = null;
+    }
+    setDictando(false);
+  };
+
+  const programarReinicioDictado = (recognition) => {
+    if (reinicioDictadoTimerRef.current) {
+      clearTimeout(reinicioDictadoTimerRef.current);
+    }
+    reinicioDictadoTimerRef.current = setTimeout(() => {
+      reinicioDictadoTimerRef.current = null;
+      if (!dictandoRef.current) return;
+
+      const intentarStart = (instancia) => {
+        try {
+          instancia.start();
+          setDictadoAviso('');
+        } catch (e) {
+          console.warn('[dictado] reinicio falló, recreando:', e);
+          const nuevo = crearRecognition();
+          if (!nuevo || !dictandoRef.current) return;
+          recognitionRef.current = nuevo;
+          try {
+            nuevo.start();
+            setDictadoAviso('');
+          } catch (e2) {
+            console.warn('[dictado] no se pudo reiniciar:', e2);
+            detenerDictado();
+            alert('No se pudo reiniciar el dictado. Pulsa Dictar de nuevo.');
+          }
+        }
+      };
+
+      intentarStart(recognition);
+    }, 300);
+  };
+
+  const crearRecognition = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return null;
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'es-MX';
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+      console.log('[dictado] onstart');
+      if (dictandoRef.current) setDictadoAviso('');
+    };
+    recognition.onaudiostart = () => console.log('[dictado] onaudiostart');
+    recognition.onspeechstart = () => {
+      console.log('[dictado] onspeechstart');
+      setDictadoAviso('');
+    };
+    recognition.onspeechend = () => console.log('[dictado] onspeechend');
+    recognition.onaudioend = () => console.log('[dictado] onaudioend');
+    recognition.onnomatch = () => console.log('[dictado] onnomatch');
+
+    recognition.onresult = (event) => {
+      console.log('[dictado] onresult', event.results.length, 'resultIndex:', event.resultIndex);
+      setDictadoAviso('');
+      let finalText = '';
+      let interimText = '';
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const result = event.results[i];
+        const transcript = result[0] && result[0].transcript ? result[0].transcript : '';
+        console.log('[dictado] result', i, 'isFinal:', result.isFinal, 'transcript:', JSON.stringify(transcript));
+        if (result.isFinal) {
+          finalText += transcript;
+        } else {
+          interimText += transcript;
+        }
+      }
+      if (finalText) {
+        const base = dictadoBaseRef.current;
+        const separador = base && !base.endsWith(' ') && !base.endsWith('\n') ? ' ' : '';
+        dictadoBaseRef.current = base + separador + finalText.trim() + ' ';
+        setNotaActual(prev => ({ ...prev, contenido: dictadoBaseRef.current }));
+      } else if (interimText) {
+        setNotaActual(prev => ({ ...prev, contenido: dictadoBaseRef.current + interimText }));
+      }
+    };
+
+    recognition.onerror = (event) => {
+      if (event.error === 'aborted') return;
+      if (event.error === 'no-speech') {
+        console.log('[dictado] sin voz detectada, se reintentará escucha');
+        if (dictandoRef.current) {
+          setDictadoAviso('No se detectó voz. Habla ahora con claridad; el micrófono sigue activo.');
+        }
+        return;
+      }
+      console.warn('[dictado] onerror:', event.error, event);
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+        detenerDictado();
+        alert('Permiso de micrófono denegado. Habilítalo en tu navegador para usar el dictado.');
+      } else if (event.error === 'network') {
+        detenerDictado();
+        alert('Error de red en el reconocimiento de voz. Verifica tu conexión a internet.');
+      }
+    };
+
+    recognition.onend = () => {
+      console.log('[dictado] onend');
+      if (!dictandoRef.current) {
+        setDictando(false);
+        return;
+      }
+      setDictadoAviso('Reconectando micrófono… puedes seguir hablando.');
+      programarReinicioDictado(recognition);
+    };
+
+    return recognition;
+  };
+
+  const toggleDictado = async () => {
+    if (dictando) {
+      detenerDictado();
+      return;
+    }
+
+    if (!window.isSecureContext) {
+      alert('El dictado por voz requiere una conexión segura (HTTPS) o ejecutarse en localhost.');
+      return;
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert('Tu navegador no soporta dictado por voz. Usa Chrome, Edge o Safari.');
+      return;
+    }
+
+    if (navigator.mediaDevices?.getUserMedia) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach((track) => track.stop());
+      } catch (e) {
+        console.warn('[dictado] getUserMedia:', e);
+        alert('No se pudo acceder al micrófono. Verifica los permisos del navegador y del sistema.');
+        return;
+      }
+    }
+
+    const recognition = crearRecognition();
+    if (!recognition) {
+      alert('Tu navegador no soporta dictado por voz. Usa Chrome, Edge o Safari.');
+      return;
+    }
+    recognitionRef.current = recognition;
+    dictadoBaseRef.current = notaActual.contenido || '';
+    dictandoRef.current = true;
+    setDictadoAviso('Iniciando micrófono… habla en cuanto veas “Escuchando”.');
+    setDictando(true);
+    try {
+      recognition.start();
+    } catch (e) {
+      console.warn('No se pudo iniciar el dictado:', e);
+      detenerDictado();
+      alert('No se pudo iniciar el dictado: ' + (e?.message || e));
+    }
+  };
 
   // ============ REPORTE SESIÓN ============
   const ORIENTADOR_NOMBRE = 'CLAUDIA TALAMANTES DOSAL';
@@ -1693,14 +1890,51 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
                   </div>
 
                   {/* Encabezado de notas */}
-                  <div style={{ padding: '24px 28px', background: colors.soft, borderTop: `1px solid ${colors.border}`, borderBottom: `1px solid ${colors.border}` }}>
-                    <div style={{ fontSize: 11, letterSpacing: 2, color: colors.accent, textTransform: 'uppercase', marginBottom: 4, fontWeight: 700 }}>
-                      Bitácora abierta
+                  <div style={{ padding: '24px 28px', background: colors.soft, borderTop: `1px solid ${colors.border}`, borderBottom: `1px solid ${colors.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16 }}>
+                    <div>
+                      <div style={{ fontSize: 11, letterSpacing: 2, color: colors.accent, textTransform: 'uppercase', marginBottom: 4, fontWeight: 700 }}>
+                        Bitácora abierta
+                      </div>
+                      <h3 style={{ fontFamily: fontDisplay, fontSize: 20, margin: 0, color: colors.primary, fontWeight: 500 }}>
+                        Notas de la sesión
+                      </h3>
                     </div>
-                    <h3 style={{ fontFamily: fontDisplay, fontSize: 20, margin: 0, color: colors.primary, fontWeight: 500 }}>
-                      Notas de la sesión
-                    </h3>
+                    <button
+                      onClick={toggleDictado}
+                      disabled={!dictadoSoportado}
+                      title={
+                        !dictadoSoportado
+                          ? 'Tu navegador no soporta dictado por voz. Usa Chrome, Edge o Safari.'
+                          : dictando ? 'Detener dictado' : 'Dictar por voz'
+                      }
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        padding: '10px 16px',
+                        background: dictando ? colors.danger : colors.primary,
+                        color: '#fff',
+                        border: 'none',
+                        borderRadius: 4,
+                        cursor: dictadoSoportado ? 'pointer' : 'not-allowed',
+                        opacity: dictadoSoportado ? 1 : 0.5,
+                        fontSize: 12, fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase',
+                        fontFamily: fontUI,
+                        whiteSpace: 'nowrap',
+                        boxShadow: dictando ? `0 0 0 4px ${colors.danger}33` : 'none',
+                        transition: 'background 0.2s, box-shadow 0.2s'
+                      }}
+                    >
+                      {dictando ? <MicOff size={16} /> : <Mic size={16} />}
+                      {dictando ? 'Detener' : 'Dictar'}
+                    </button>
                   </div>
+                  {dictando && (
+                    <div style={{ padding: '8px 28px', background: '#FFF6F6', borderBottom: `1px solid ${colors.border}`, fontSize: 12, color: colors.danger, display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+                      <span style={{ display: 'inline-block', width: 8, height: 8, marginTop: 4, flexShrink: 0, borderRadius: '50%', background: colors.danger, animation: 'pulse 1.2s ease-in-out infinite' }} />
+                      <span>
+                        {dictadoAviso || 'Escuchando… habla con claridad. El texto se irá agregando a las notas. Pulsa Detener cuando termines.'}
+                      </span>
+                    </div>
+                  )}
 
                   <div style={{ padding: 28 }}>
                     <textarea
