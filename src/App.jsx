@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Calendar, UserPlus, FileText, Search, Phone, MessageCircle, Save, Trash2, Eye, Download, ChevronLeft, ChevronRight, Clock, User, Hash, X, Archive, NotebookPen, ArrowRight, StickyNote, Sparkles, Send, Brain, RefreshCw, Key, Mic, MicOff } from 'lucide-react';
+import { Calendar, UserPlus, FileText, Search, Phone, MessageCircle, Save, Trash2, Eye, Download, ChevronLeft, ChevronRight, Clock, User, Hash, X, Archive, NotebookPen, ArrowRight, StickyNote, Sparkles, Send, Brain, RefreshCw, Key, Mic, MicOff, HelpCircle, Plus, Library, BookmarkPlus, Check, Pencil } from 'lucide-react';
 import { useAuth } from './auth/AuthProvider.jsx';
 import Login from './auth/Login.jsx';
 import { supabase } from './lib/supabaseClient.js';
@@ -18,6 +18,7 @@ const App = () => {
   const [fechaActual, setFechaActual] = useState(new Date());
   const [showCitaModal, setShowCitaModal] = useState(false);
   const [nuevaCita, setNuevaCita] = useState({ consultanteId: '', fecha: '', hora: '', horaFin: '', duracion: 60, notas: '' });
+  const [citaEditando, setCitaEditando] = useState(null);
 
   // ============ ALTA CONSULTANTE ============
   const [nuevoConsultante, setNuevoConsultante] = useState({
@@ -35,6 +36,20 @@ const App = () => {
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [showApiKeyModal, setShowApiKeyModal] = useState(false);
   const [generandoReporteIA, setGenerandoReporteIA] = useState(false);
+
+  // ============ AYUDA — CHAT ABIERTO ============
+  const [showAyuda, setShowAyuda] = useState(false);
+  const [ayudaVista, setAyudaVista] = useState('chat'); // 'chat' | 'lista'
+  const [ayudaConversaciones, setAyudaConversaciones] = useState([]);
+  const [ayudaActivaId, setAyudaActivaId] = useState(null);
+  const [ayudaInput, setAyudaInput] = useState('');
+  const [ayudaCargando, setAyudaCargando] = useState(false);
+
+  // ============ MI BIBLIOTECA ============
+  const [biblioteca, setBiblioteca] = useState([]);
+  const [bibliotecaBusqueda, setBibliotecaBusqueda] = useState('');
+  const [bibEditandoId, setBibEditandoId] = useState(null);
+  const [bibTituloInput, setBibTituloInput] = useState('');
 
   // ============ NOTAS DE SESIÓN ============
   const [notaActual, setNotaActual] = useState({
@@ -267,10 +282,14 @@ const App = () => {
         const n = localStorage.getItem('notas');
         const a = localStorage.getItem('citas');
         const k = localStorage.getItem('anthropic_api_key');
+        const ay = localStorage.getItem('ayuda_conversaciones');
+        const bib = localStorage.getItem('biblioteca');
         if (c) setConsultantes(JSON.parse(c));
         if (s) setSesiones(JSON.parse(s));
         if (n) setNotas(JSON.parse(n));
         if (a) setCitas(JSON.parse(a));
+        if (ay) setAyudaConversaciones(JSON.parse(ay));
+        if (bib) setBiblioteca(JSON.parse(bib));
         if (k) setApiKey(k);
         else if (import.meta.env.VITE_ANTHROPIC_API_KEY) setApiKey(import.meta.env.VITE_ANTHROPIC_API_KEY);
       } catch (e) {
@@ -391,6 +410,7 @@ CONTEXTO COMPLETO DEL CASO:
 ${contextoConsultante}
 
 LINEAMIENTOS PARA TUS RESPUESTAS:
+0. Basa SIEMPRE tus respuestas en las NOTAS y los REPORTES DE LA SESIÓN del consultante seleccionado (incluidos arriba). Toda idea, hipótesis o sugerencia debe apoyarse en lo que aparece en esas notas y reportes; cita el dato concreto (fecha, tema, frase) que la sustenta. Si algo no consta en las notas ni en los reportes, dilo explícitamente y no lo des por hecho.
 1. Habla con la psicóloga como un colega senior, no como un libro de texto.
 2. Sé específico al caso — usa nombres, fechas, temas concretos del historial. Evita consejos genéricos.
 3. Cuando sugieras técnicas logoterapéuticas, di POR QUÉ son apropiadas para este consultante en particular.
@@ -457,6 +477,182 @@ Te están preparando para acompañar la próxima sesión con ${consultante?.nomb
     if (prepMensajes.length > 0 && !confirm('¿Limpiar la conversación actual?')) return;
     setPrepMensajes([]);
   };
+
+  // ============ AYUDA — CHAT ABIERTO ============
+  const abrirAyuda = () => {
+    setShowAyuda(true);
+    if (ayudaConversaciones.length > 0) {
+      setAyudaVista('lista');
+    } else {
+      setAyudaActivaId(null);
+      setAyudaVista('chat');
+    }
+  };
+
+  const nuevaConversacionAyuda = () => {
+    setAyudaActivaId(null);
+    setAyudaInput('');
+    setAyudaVista('chat');
+  };
+
+  const abrirConversacionAyuda = (id) => {
+    setAyudaActivaId(id);
+    setAyudaVista('chat');
+  };
+
+  const eliminarConversacionAyuda = (id) => {
+    if (!confirm('¿Eliminar esta conversación? No se puede recuperar.')) return;
+    setAyudaConversaciones(prev => {
+      const actualizadas = prev.filter(c => c.id !== id);
+      guardar('ayuda_conversaciones', actualizadas);
+      return actualizadas;
+    });
+    if (ayudaActivaId === id) {
+      setAyudaActivaId(null);
+      setAyudaVista('lista');
+    }
+  };
+
+  const enviarMensajeAyuda = async () => {
+    if (!ayudaInput.trim() || ayudaCargando) return;
+    if (!apiKey) {
+      setApiKeyInput(apiKey);
+      setShowApiKeyModal(true);
+      alert('Falta configurar la API Key de Anthropic. Pégala en la ventana que se abrió (ícono de llave) para usar el chat de AYUDA.');
+      return;
+    }
+
+    const texto = ayudaInput.trim();
+    const ahora = new Date().toISOString();
+    const mensajeUsuario = { role: 'user', content: texto };
+
+    // Localiza o crea la conversación activa
+    let conv = ayudaActivaId ? ayudaConversaciones.find(c => c.id === ayudaActivaId) : null;
+    let convsBase = ayudaConversaciones;
+    if (!conv) {
+      conv = { id: `ay_${Date.now()}`, titulo: texto.slice(0, 48) + (texto.length > 48 ? '…' : ''), mensajes: [], creada: ahora, actualizada: ahora };
+      convsBase = [conv, ...ayudaConversaciones];
+      setAyudaActivaId(conv.id);
+    }
+
+    const convId = conv.id;
+    const mensajesConUsuario = [...conv.mensajes, mensajeUsuario];
+    const convsConUsuario = convsBase.map(c => c.id === convId ? { ...c, mensajes: mensajesConUsuario, actualizada: ahora } : c);
+    setAyudaConversaciones(convsConUsuario);
+    guardar('ayuda_conversaciones', convsConUsuario);
+    setAyudaInput('');
+    setAyudaCargando(true);
+
+    const systemPrompt = `Eres un asistente útil para Claudia, psicóloga especialista en logoterapia. Respondes con claridad, calidez y de forma directa en español mexicano.
+
+Este es un chat abierto: puedes ayudar con cualquier pregunta del momento — dudas sobre logoterapia y técnicas frankleanas (diálogo socrático, derreflexión, intención paradójica, modificación de actitud, búsqueda de sentido), redacción, ideas, organización de su práctica clínica, o cualquier tema general.
+
+Cuando la pregunta sea clínica, responde desde el marco de la logoterapia de Viktor Frankl cuando sea pertinente. No inventes datos de consultantes específicos; si necesitas información que no tienes, dilo. Estructura tus respuestas con claridad y sé conciso cuando la pregunta sea simple.`;
+
+    try {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true"
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6",
+          max_tokens: 1500,
+          system: systemPrompt,
+          messages: mensajesConUsuario.map(m => ({ role: m.role, content: m.content }))
+        })
+      });
+
+      const data = await response.json();
+      if (data.error) throw new Error(data.error.message || 'Error en la API');
+
+      const respuesta = data.content.filter(b => b.type === 'text').map(b => b.text).join('\n');
+      const mensajeAsistente = { role: 'assistant', content: respuesta };
+
+      setAyudaConversaciones(prev => {
+        const actualizadas = prev.map(c => c.id === convId ? { ...c, mensajes: [...mensajesConUsuario, mensajeAsistente], actualizada: new Date().toISOString() } : c);
+        guardar('ayuda_conversaciones', actualizadas);
+        return actualizadas;
+      });
+    } catch (error) {
+      console.error('Error en AYUDA:', error);
+      const mensajeError = { role: 'assistant', content: `⚠ Hubo un problema al conectar: ${error.message}. Verifica tu conexión y tu API Key.` };
+      setAyudaConversaciones(prev => {
+        const actualizadas = prev.map(c => c.id === convId ? { ...c, mensajes: [...mensajesConUsuario, mensajeError], actualizada: new Date().toISOString() } : c);
+        guardar('ayuda_conversaciones', actualizadas);
+        return actualizadas;
+      });
+    } finally {
+      setAyudaCargando(false);
+    }
+  };
+
+  // ============ MI BIBLIOTECA ============
+  const estaEnBiblioteca = (convId, idx) =>
+    biblioteca.some(b => b.origen && b.origen.convId === convId && b.origen.idx === idx);
+
+  const guardarEnBiblioteca = (convId, idx) => {
+    if (estaEnBiblioteca(convId, idx)) return;
+    const conv = ayudaConversaciones.find(c => c.id === convId);
+    if (!conv) return;
+    const respuesta = conv.mensajes[idx];
+    if (!respuesta || respuesta.role !== 'assistant') return;
+    // La pregunta que originó la respuesta es el mensaje de usuario inmediatamente anterior
+    const pregunta = idx > 0 && conv.mensajes[idx - 1].role === 'user' ? conv.mensajes[idx - 1].content : '';
+    const entrada = {
+      id: `bib_${Date.now()}`,
+      titulo: (pregunta || respuesta.content).slice(0, 80),
+      pregunta,
+      respuesta: respuesta.content,
+      fecha: new Date().toISOString(),
+      origen: { convId, idx }
+    };
+    setBiblioteca(prev => {
+      const actualizada = [entrada, ...prev];
+      guardar('biblioteca', actualizada);
+      return actualizada;
+    });
+  };
+
+  const eliminarDeBiblioteca = (id) => {
+    if (!confirm('¿Quitar esta respuesta de Mi Biblioteca?')) return;
+    setBiblioteca(prev => {
+      const actualizada = prev.filter(b => b.id !== id);
+      guardar('biblioteca', actualizada);
+      return actualizada;
+    });
+  };
+
+  const iniciarEdicionTitulo = (b) => {
+    setBibEditandoId(b.id);
+    setBibTituloInput(b.titulo || b.pregunta || '');
+  };
+
+  const guardarTituloBiblioteca = () => {
+    const titulo = bibTituloInput.trim();
+    if (!titulo) { setBibEditandoId(null); return; }
+    setBiblioteca(prev => {
+      const actualizada = prev.map(b => b.id === bibEditandoId ? { ...b, titulo } : b);
+      guardar('biblioteca', actualizada);
+      return actualizada;
+    });
+    setBibEditandoId(null);
+    setBibTituloInput('');
+  };
+
+  const bibliotecaFiltrada = useMemo(() => {
+    const q = bibliotecaBusqueda.trim().toLowerCase();
+    const ordenada = [...biblioteca].sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+    if (!q) return ordenada;
+    return ordenada.filter(b =>
+      (b.titulo || '').toLowerCase().includes(q) ||
+      (b.pregunta || '').toLowerCase().includes(q) ||
+      (b.respuesta || '').toLowerCase().includes(q)
+    );
+  }, [biblioteca, bibliotecaBusqueda]);
 
   const generarReporteConIA = async () => {
     if (!reporteSesion.consultanteId) {
@@ -735,12 +931,40 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
       return;
     }
     const consultante = consultantes.find(c => c.id === nuevaCita.consultanteId);
-    const cita = { ...nuevaCita, duracion: minFin - minIni, id: `cita_${Date.now()}`, consultanteNombre: consultante?.nombre };
-    const actualizadas = [...citas, cita];
+    let actualizadas;
+    if (citaEditando) {
+      actualizadas = citas.map(c => c.id === citaEditando
+        ? { ...c, ...nuevaCita, duracion: minFin - minIni, consultanteNombre: consultante?.nombre }
+        : c
+      );
+    } else {
+      const cita = { ...nuevaCita, duracion: minFin - minIni, id: `cita_${Date.now()}`, consultanteNombre: consultante?.nombre };
+      actualizadas = [...citas, cita];
+    }
     setCitas(actualizadas);
     await guardar('citas', actualizadas);
     setNuevaCita({ consultanteId: '', fecha: '', hora: '', horaFin: '', duracion: 60, notas: '' });
+    setCitaEditando(null);
     setShowCitaModal(false);
+  };
+
+  const abrirCita = (cita) => {
+    setNuevaCita({
+      consultanteId: cita.consultanteId || '',
+      fecha: cita.fecha || '',
+      hora: cita.hora || '',
+      horaFin: cita.horaFin || '',
+      duracion: cita.duracion || 60,
+      notas: cita.notas || ''
+    });
+    setCitaEditando(cita.id);
+    setShowCitaModal(true);
+  };
+
+  const cerrarCitaModal = () => {
+    setShowCitaModal(false);
+    setCitaEditando(null);
+    setNuevaCita({ consultanteId: '', fecha: '', hora: '', horaFin: '', duracion: 60, notas: '' });
   };
 
   const eliminarCita = async (id) => {
@@ -748,6 +972,15 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
     const actualizadas = citas.filter(c => c.id !== id);
     setCitas(actualizadas);
     await guardar('citas', actualizadas);
+  };
+
+  const eliminarCitaDesdeModal = async () => {
+    if (!citaEditando) return;
+    if (!confirm('¿Eliminar esta cita? Úsalo cuando el paciente cancele o ya no aplique.')) return;
+    const actualizadas = citas.filter(c => c.id !== citaEditando);
+    setCitas(actualizadas);
+    await guardar('citas', actualizadas);
+    cerrarCitaModal();
   };
 
   const moverCita = async (citaId, nuevaFecha, nuevaHora) => {
@@ -846,7 +1079,9 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
     textMuted: '#5A6B80',
     border: '#E0D8C4',
     danger: '#A04545',
-    soft: '#EFE7D3'
+    soft: '#EFE7D3',
+    vino: '#6E1F2B',         // Rojo vino tinto - botón AYUDA
+    vinoHover: '#8A2433'
   };
 
   const fontDisplay = "'Inter', 'Helvetica Neue', Arial, system-ui, sans-serif";
@@ -1052,7 +1287,8 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
             { id: 'preparacion', label: 'Preparando mi sesión', icon: Sparkles },
             { id: 'notas', label: 'Notas de Sesión', icon: NotebookPen },
             { id: 'reporte', label: 'Reporte de Sesión', icon: FileText },
-            { id: 'historial', label: 'Archivo Clínico', icon: Archive }
+            { id: 'historial', label: 'Archivo Clínico', icon: Archive },
+            { id: 'biblioteca', label: 'Mi Biblioteca', icon: Library }
           ].map(tab => {
             const Icon = tab.icon;
             const active = activeTab === tab.id;
@@ -1098,7 +1334,7 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
                 <p style={{ color: colors.textMuted, marginTop: 4, fontSize: 14 }}>Planeación de sesiones y citas</p>
               </div>
               <button
-                onClick={() => setShowCitaModal(true)}
+                onClick={() => { setCitaEditando(null); setNuevaCita({ consultanteId: '', fecha: '', hora: '', horaFin: '', duracion: 60, notas: '' }); setShowCitaModal(true); }}
                 style={{
                   background: colors.primary, color: '#fff', border: 'none', padding: '12px 24px',
                   borderRadius: 4, cursor: 'pointer', fontSize: 13, fontWeight: 500, letterSpacing: 0.5,
@@ -1194,6 +1430,7 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
                         const m = slotMin % 60;
                         if (h > HORA_FIN) return;
                         const hora = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+                        setCitaEditando(null);
                         setNuevaCita({ consultanteId: '', fecha: fechaStr, hora, horaFin: '', duracion: 60, notas: '' });
                         setShowCitaModal(true);
                       }}
@@ -1236,7 +1473,8 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
                             key={cita.id}
                             draggable
                             onDragStart={(e) => { e.dataTransfer.setData('text/cita-id', cita.id); e.dataTransfer.effectAllowed = 'move'; }}
-                            onClick={(e) => e.stopPropagation()}
+                            onClick={(e) => { e.stopPropagation(); abrirCita(cita); }}
+                            title="Clic para abrir o editar esta cita"
                             style={{
                               position: 'absolute',
                               top, left: 12, right: 12, height: altura,
@@ -1247,7 +1485,7 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
                               overflow: 'hidden',
                               fontSize: 12,
                               zIndex: 2,
-                              cursor: 'grab'
+                              cursor: 'pointer'
                             }}>
                             <div style={{ fontWeight: 700, color: colors.primary, fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                               {cita.consultanteNombre}
@@ -1260,7 +1498,7 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
                                 {cita.notas}
                               </div>
                             )}
-                            <button onClick={() => eliminarCita(cita.id)} style={{ position: 'absolute', top: 4, right: 4, background: 'transparent', border: 'none', cursor: 'pointer', color: colors.danger, padding: 2, display: 'flex' }}>
+                            <button onClick={(e) => { e.stopPropagation(); eliminarCita(cita.id); }} title="Eliminar cita" style={{ position: 'absolute', top: 4, right: 4, background: 'transparent', border: 'none', cursor: 'pointer', color: colors.danger, padding: 2, display: 'flex' }}>
                               <Trash2 size={12} />
                             </button>
                           </div>
@@ -1304,7 +1542,7 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
                           return (
                             <div
                               key={i}
-                              onClick={() => { setNuevaCita({ consultanteId: '', fecha: fechaD, hora: slot, horaFin: '', duracion: 60, notas: '' }); setShowCitaModal(true); }}
+                              onClick={() => { setCitaEditando(null); setNuevaCita({ consultanteId: '', fecha: fechaD, hora: slot, horaFin: '', duracion: 60, notas: '' }); setShowCitaModal(true); }}
                               onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
                               onDrop={(e) => {
                                 e.preventDefault();
@@ -1324,8 +1562,9 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
                                     key={cita.id}
                                     draggable
                                     onDragStart={(e) => { e.dataTransfer.setData('text/cita-id', cita.id); e.dataTransfer.effectAllowed = 'move'; e.stopPropagation(); }}
-                                    onClick={(e) => e.stopPropagation()}
-                                    style={{ position: 'absolute', top: 1, left: 2, right: 2, height: altura, background: colors.accentSoft, padding: '2px 6px', borderRadius: 3, fontSize: 10, borderLeft: `3px solid ${colors.accent}`, lineHeight: 1.3, cursor: 'grab', zIndex: 5, overflow: 'hidden', boxSizing: 'border-box' }}
+                                    onClick={(e) => { e.stopPropagation(); abrirCita(cita); }}
+                                    title="Clic para abrir o editar esta cita"
+                                    style={{ position: 'absolute', top: 1, left: 2, right: 2, height: altura, background: colors.accentSoft, padding: '2px 6px', borderRadius: 3, fontSize: 10, borderLeft: `3px solid ${colors.accent}`, lineHeight: 1.3, cursor: 'pointer', zIndex: 5, overflow: 'hidden', boxSizing: 'border-box' }}
                                   >
                                     <div style={{ fontWeight: 600 }}>{cita.hora}{cita.horaFin ? `–${cita.horaFin}` : ''} · {cita.consultanteNombre}</div>
                                   </div>
@@ -1362,7 +1601,7 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
                     return (
                       <div
                         key={i}
-                        onClick={() => { setNuevaCita({ consultanteId: '', fecha: fechaD, hora: '', horaFin: '', duracion: 60, notas: '' }); setShowCitaModal(true); }}
+                        onClick={() => { setCitaEditando(null); setNuevaCita({ consultanteId: '', fecha: fechaD, hora: '', horaFin: '', duracion: 60, notas: '' }); setShowCitaModal(true); }}
                         onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
                         onDrop={(e) => {
                           e.preventDefault();
@@ -1378,8 +1617,9 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
                             key={cita.id}
                             draggable
                             onDragStart={(e) => { e.dataTransfer.setData('text/cita-id', cita.id); e.dataTransfer.effectAllowed = 'move'; e.stopPropagation(); }}
-                            onClick={(e) => e.stopPropagation()}
-                            style={{ fontSize: 10, padding: '2px 6px', background: colors.primary, color: '#fff', borderRadius: 2, marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'grab' }}
+                            onClick={(e) => { e.stopPropagation(); abrirCita(cita); }}
+                            title="Clic para abrir o editar esta cita"
+                            style={{ fontSize: 10, padding: '2px 6px', background: colors.primary, color: '#fff', borderRadius: 2, marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer' }}
                           >
                             {cita.hora}{cita.horaFin ? `–${cita.horaFin}` : ''} {cita.consultanteNombre}
                           </div>
@@ -1619,9 +1859,9 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
                   <Brain size={20} color={colors.primary} />
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontFamily: fontDisplay, fontSize: 18, fontWeight: 600 }}>Supervisor Clínico</div>
+                  <div style={{ fontFamily: fontDisplay, fontSize: 18, fontWeight: 600 }}>Algunas ideas que pueden ayudar</div>
                   <div style={{ fontSize: 12, color: colors.accentSoft, fontStyle: 'italic' }}>
-                    Especialista en logoterapia · Responde con base en el historial del caso
+                    Basado en las notas y reportes de sesión del consultante seleccionado
                   </div>
                 </div>
                 <button
@@ -1684,7 +1924,7 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
                         }}>
                           {m.role === 'assistant' && (
                             <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: 'uppercase', color: colors.accent, marginBottom: 8, fontWeight: 700, fontFamily: fontUI }}>
-                              Supervisor Clínico
+                              Algunas ideas que pueden ayudar
                             </div>
                           )}
                           {m.content}
@@ -2557,6 +2797,96 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
           </div>
         )}
 
+        {/* ============ MI BIBLIOTECA ============ */}
+        {activeTab === 'biblioteca' && (
+          <div>
+            <div style={{ marginBottom: 24 }}>
+              <h2 style={{ fontFamily: fontDisplay, fontSize: 32, margin: 0, color: colors.vino, fontWeight: 500 }}>
+                Mi Biblioteca
+              </h2>
+              <p style={{ color: colors.textMuted, marginTop: 4, fontSize: 14 }}>
+                {biblioteca.length} {biblioteca.length === 1 ? 'respuesta guardada' : 'respuestas guardadas'} · Respuestas que pasaste desde el chat de AYUDA
+              </p>
+            </div>
+
+            {biblioteca.length > 0 && (
+              <div style={{ background: colors.cardBg, padding: 20, borderRadius: 8, border: `1px solid ${colors.border}`, marginBottom: 20 }}>
+                <div style={{ position: 'relative' }}>
+                  <Search size={16} style={{ position: 'absolute', left: 14, top: 14, color: colors.textMuted }} />
+                  <input
+                    type="text"
+                    value={bibliotecaBusqueda}
+                    onChange={(e) => setBibliotecaBusqueda(e.target.value)}
+                    placeholder="Buscar en tus respuestas guardadas..."
+                    style={{ width: '100%', padding: '12px 14px 12px 40px', border: `1px solid ${colors.border}`, borderRadius: 4, fontSize: 14, fontFamily: fontBody, background: colors.bg, outline: 'none', boxSizing: 'border-box' }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {biblioteca.length === 0 ? (
+              <div style={{ background: colors.cardBg, padding: 60, textAlign: 'center', border: `1px dashed ${colors.border}`, borderRadius: 8, color: colors.textMuted }}>
+                <Library size={48} style={{ opacity: 0.3, marginBottom: 12 }} />
+                <p style={{ margin: '0 0 6px' }}>Tu biblioteca está vacía</p>
+                <p style={{ margin: 0, fontSize: 13 }}>Abre el chat de <strong style={{ color: colors.vino }}>AYUDA</strong> y usa el botón <em>"Pasar a Mi Biblioteca"</em> debajo de una respuesta para guardarla aquí.</p>
+              </div>
+            ) : bibliotecaFiltrada.length === 0 ? (
+              <div style={{ background: colors.cardBg, padding: 40, textAlign: 'center', border: `1px dashed ${colors.border}`, borderRadius: 8, color: colors.textMuted }}>
+                <p style={{ margin: 0 }}>Ninguna respuesta coincide con "{bibliotecaBusqueda}".</p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {bibliotecaFiltrada.map(b => (
+                  <div key={b.id} style={{ background: colors.cardBg, borderRadius: 8, border: `1px solid ${colors.border}`, borderLeft: `4px solid ${colors.vino}`, padding: 20 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: 'uppercase', color: colors.vino, fontWeight: 700, fontFamily: fontUI, marginBottom: 4 }}>
+                          {new Date(b.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })}
+                        </div>
+                        {bibEditandoId === b.id ? (
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                            <input
+                              value={bibTituloInput}
+                              onChange={(e) => setBibTituloInput(e.target.value)}
+                              onKeyDown={(e) => { if (e.key === 'Enter') guardarTituloBiblioteca(); if (e.key === 'Escape') setBibEditandoId(null); }}
+                              autoFocus
+                              style={{ flex: 1, padding: '8px 10px', border: `1px solid ${colors.vino}`, borderRadius: 4, fontSize: 16, fontFamily: fontDisplay, fontWeight: 600, color: colors.primary, background: colors.bg, outline: 'none', boxSizing: 'border-box' }}
+                            />
+                            <button onClick={guardarTituloBiblioteca} title="Guardar título" style={{ background: colors.vino, color: '#fff', border: 'none', borderRadius: 4, padding: '8px 10px', cursor: 'pointer', display: 'flex', flexShrink: 0 }}><Check size={16} /></button>
+                            <button onClick={() => setBibEditandoId(null)} title="Cancelar" style={{ background: 'transparent', border: `1px solid ${colors.border}`, borderRadius: 4, padding: '8px 10px', cursor: 'pointer', display: 'flex', flexShrink: 0 }}><X size={16} /></button>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div style={{ fontFamily: fontDisplay, fontSize: 16, color: colors.primary, fontWeight: 600, lineHeight: 1.4 }}>
+                              {b.titulo || b.pregunta || 'Sin título'}
+                            </div>
+                            <button onClick={() => iniciarEdicionTitulo(b)} title="Editar título" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: colors.textMuted, padding: 2, display: 'flex', flexShrink: 0 }}><Pencil size={14} /></button>
+                          </div>
+                        )}
+                        {b.pregunta && b.pregunta !== (b.titulo || '') && (
+                          <div style={{ fontSize: 12, color: colors.textMuted, fontStyle: 'italic', marginTop: 4, fontFamily: fontBody }}>
+                            Pregunta: {b.pregunta}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => eliminarDeBiblioteca(b.id)}
+                        title="Quitar de Mi Biblioteca"
+                        style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: colors.danger, padding: 4, display: 'flex', flexShrink: 0 }}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                    <div style={{ fontSize: 14, lineHeight: 1.7, fontFamily: fontBody, color: colors.text, whiteSpace: 'pre-wrap', paddingTop: 12, borderTop: `1px dashed ${colors.border}` }}>
+                      {b.respuesta}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
       </main>
 
       {/* MODAL NUEVA CITA */}
@@ -2564,8 +2894,8 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(31, 38, 34, 0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20 }}>
           <div style={{ background: colors.cardBg, borderRadius: 8, padding: 32, maxWidth: 500, width: '100%', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-              <h3 style={{ fontFamily: fontDisplay, fontSize: 24, margin: 0, color: colors.primary }}>Nueva Cita</h3>
-              <button onClick={() => setShowCitaModal(false)} style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
+              <h3 style={{ fontFamily: fontDisplay, fontSize: 24, margin: 0, color: colors.primary }}>{citaEditando ? 'Editar Cita' : 'Nueva Cita'}</h3>
+              <button onClick={cerrarCitaModal} style={{ background: 'transparent', border: 'none', cursor: 'pointer' }}>
                 <X size={20} />
               </button>
             </div>
@@ -2613,9 +2943,17 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
               <textarea value={nuevaCita.notas} onChange={(e) => setNuevaCita({ ...nuevaCita, notas: e.target.value })} rows={2} style={{ width: '100%', padding: 12, border: `1px solid ${colors.border}`, borderRadius: 4, fontSize: 14, background: colors.bg, boxSizing: 'border-box', fontFamily: fontBody, resize: 'vertical' }} />
             </div>
             <div style={{ display: 'flex', gap: 12 }}>
-              <button onClick={guardarCita} style={{ flex: 1, background: colors.primary, color: '#fff', border: 'none', padding: 14, borderRadius: 4, cursor: 'pointer', fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase', fontSize: 13 }}>Guardar Cita</button>
-              <button onClick={() => setShowCitaModal(false)} style={{ background: 'transparent', border: `1px solid ${colors.border}`, padding: 14, borderRadius: 4, cursor: 'pointer', fontSize: 13 }}>Cancelar</button>
+              <button onClick={guardarCita} style={{ flex: 1, background: colors.primary, color: '#fff', border: 'none', padding: 14, borderRadius: 4, cursor: 'pointer', fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase', fontSize: 13 }}>{citaEditando ? 'Guardar Cambios' : 'Guardar Cita'}</button>
+              <button onClick={cerrarCitaModal} style={{ background: 'transparent', border: `1px solid ${colors.border}`, padding: 14, borderRadius: 4, cursor: 'pointer', fontSize: 13 }}>Cancelar</button>
             </div>
+            {citaEditando && (
+              <button
+                onClick={eliminarCitaDesdeModal}
+                style={{ width: '100%', marginTop: 12, background: 'transparent', border: `1px solid ${colors.danger}`, color: colors.danger, padding: 14, borderRadius: 4, cursor: 'pointer', fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase', fontSize: 13, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
+              >
+                <Trash2 size={15} /> Eliminar Cita
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -2779,12 +3117,198 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
         );
       })()}
 
+      {/* ============ AYUDA — BOTÓN FLOTANTE + CHAT ABIERTO ============ */}
+      {!showAyuda && (
+        <button
+          onClick={abrirAyuda}
+          title="Abrir chat de ayuda"
+          style={{
+            position: 'fixed', bottom: 24, right: 24, zIndex: 900,
+            background: colors.vino, color: '#fff', border: 'none', borderRadius: 999,
+            padding: '14px 22px', display: 'flex', alignItems: 'center', gap: 10,
+            cursor: 'pointer', fontSize: 15, fontWeight: 700, letterSpacing: 1,
+            boxShadow: '0 8px 24px rgba(110,31,43,0.45)', fontFamily: fontUI
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.background = colors.vinoHover; }}
+          onMouseLeave={(e) => { e.currentTarget.style.background = colors.vino; }}
+        >
+          <HelpCircle size={20} /> AYUDA
+        </button>
+      )}
+
+      {showAyuda && (
+        <div style={{
+          position: 'fixed', bottom: 24, right: 24, zIndex: 901,
+          width: 'min(420px, calc(100vw - 32px))', height: 'min(620px, calc(100vh - 48px))',
+          background: colors.cardBg, borderRadius: 12, overflow: 'hidden',
+          boxShadow: '0 24px 70px rgba(0,0,0,0.38)', border: `1px solid ${colors.border}`,
+          display: 'flex', flexDirection: 'column'
+        }}>
+          {/* Header */}
+          <div style={{ background: colors.vino, color: '#fff', padding: '12px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
+            {ayudaVista === 'chat' && ayudaConversaciones.length > 0 && (
+              <button onClick={() => setAyudaVista('lista')} title="Ver conversaciones" style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', width: 30, height: 30, borderRadius: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <ChevronLeft size={18} />
+              </button>
+            )}
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <HelpCircle size={18} />
+              <div style={{ fontFamily: fontDisplay, fontWeight: 700, fontSize: 16, letterSpacing: 1 }}>
+                {ayudaVista === 'lista' ? 'AYUDA · Conversaciones' : 'AYUDA'}
+              </div>
+            </div>
+            {ayudaVista === 'chat' && (
+              <button onClick={nuevaConversacionAyuda} title="Nueva conversación" style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', width: 30, height: 30, borderRadius: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Plus size={18} />
+              </button>
+            )}
+            <button onClick={() => setShowAyuda(false)} title="Cerrar" style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', width: 30, height: 30, borderRadius: 6, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <X size={18} />
+            </button>
+          </div>
+
+          {/* Cuerpo */}
+          {ayudaVista === 'lista' ? (
+            <div style={{ flex: 1, overflowY: 'auto', padding: 12, background: colors.bg }}>
+              <button
+                onClick={nuevaConversacionAyuda}
+                style={{ width: '100%', background: colors.vino, color: '#fff', border: 'none', padding: 12, borderRadius: 8, cursor: 'pointer', fontWeight: 600, fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 12, fontFamily: fontUI }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = colors.vinoHover; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = colors.vino; }}
+              >
+                <Plus size={16} /> Nueva conversación
+              </button>
+              {ayudaConversaciones.length === 0 ? (
+                <div style={{ textAlign: 'center', color: colors.textMuted, fontSize: 13, padding: 24, fontFamily: fontBody }}>
+                  Aún no hay conversaciones. Empieza una nueva.
+                </div>
+              ) : (
+                [...ayudaConversaciones]
+                  .sort((a, b) => new Date(b.actualizada) - new Date(a.actualizada))
+                  .map(c => (
+                    <div
+                      key={c.id}
+                      onClick={() => abrirConversacionAyuda(c.id)}
+                      style={{ background: colors.cardBg, border: `1px solid ${colors.border}`, borderRadius: 8, padding: '10px 12px', marginBottom: 8, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}
+                    >
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: colors.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontFamily: fontBody }}>
+                          {c.titulo || 'Conversación'}
+                        </div>
+                        <div style={{ fontSize: 11, color: colors.textMuted, marginTop: 2, fontFamily: fontBody }}>
+                          {new Date(c.actualizada).toLocaleString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} · {c.mensajes.length} {c.mensajes.length === 1 ? 'mensaje' : 'mensajes'}
+                        </div>
+                      </div>
+                      <button onClick={(e) => { e.stopPropagation(); eliminarConversacionAyuda(c.id); }} title="Eliminar conversación" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: colors.danger, padding: 4, display: 'flex' }}>
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  ))
+              )}
+            </div>
+          ) : (
+            <>
+              <div style={{ flex: 1, overflowY: 'auto', padding: 16, background: colors.bg, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {(() => {
+                  const conv = ayudaConversaciones.find(c => c.id === ayudaActivaId);
+                  const mensajes = conv ? conv.mensajes : [];
+                  if (mensajes.length === 0) {
+                    return (
+                      <div style={{ textAlign: 'center', color: colors.textMuted, margin: 'auto', padding: 20, fontFamily: fontBody }}>
+                        <HelpCircle size={36} style={{ opacity: 0.4, marginBottom: 12, color: colors.vino }} />
+                        <div style={{ fontFamily: fontDisplay, fontSize: 18, color: colors.primary, marginBottom: 6 }}>¿En qué te ayudo?</div>
+                        <div style={{ fontSize: 13, lineHeight: 1.5, maxWidth: 280, margin: '0 auto' }}>
+                          Pregunta lo que quieras al instante. Esta conversación se guardará automáticamente.
+                        </div>
+                      </div>
+                    );
+                  }
+                  return mensajes.map((m, i) => {
+                    const guardado = m.role === 'assistant' && estaEnBiblioteca(ayudaActivaId, i);
+                    const esError = m.role === 'assistant' && m.content.startsWith('⚠');
+                    return (
+                      <div key={i} style={{ display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
+                        <div style={{ maxWidth: '85%', display: 'flex', flexDirection: 'column', alignItems: m.role === 'user' ? 'flex-end' : 'flex-start', gap: 6 }}>
+                          <div style={{
+                            padding: '10px 14px', borderRadius: 10,
+                            background: m.role === 'user' ? colors.vino : colors.cardBg,
+                            color: m.role === 'user' ? '#fff' : colors.text,
+                            border: m.role === 'user' ? 'none' : `1px solid ${colors.border}`,
+                            fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap', fontFamily: fontBody
+                          }}>
+                            {m.content}
+                          </div>
+                          {m.role === 'assistant' && !esError && (
+                            guardado ? (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 11, color: colors.textMuted, fontFamily: fontUI }}>
+                                <Check size={13} color={colors.vino} /> Guardado en Mi Biblioteca
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => guardarEnBiblioteca(ayudaActivaId, i)}
+                                title="Guardar esta respuesta en Mi Biblioteca"
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'transparent', border: `1px solid ${colors.vino}`, color: colors.vino, borderRadius: 999, padding: '5px 12px', fontSize: 11, fontWeight: 700, letterSpacing: 0.5, cursor: 'pointer', fontFamily: fontUI, textTransform: 'uppercase' }}
+                                onMouseEnter={(e) => { e.currentTarget.style.background = colors.vino; e.currentTarget.style.color = '#fff'; }}
+                                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = colors.vino; }}
+                              >
+                                <BookmarkPlus size={13} /> Pasar a Mi Biblioteca
+                              </button>
+                            )
+                          )}
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
+                {ayudaCargando && (
+                  <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                    <div style={{ padding: '10px 14px', borderRadius: 10, background: colors.cardBg, border: `1px solid ${colors.border}`, fontSize: 13, color: colors.textMuted, fontStyle: 'italic', display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <span style={{ width: 6, height: 6, background: colors.vino, borderRadius: '50%', animation: 'ayudaPulse 1.4s ease-in-out infinite' }}></span>
+                        <span style={{ width: 6, height: 6, background: colors.vino, borderRadius: '50%', animation: 'ayudaPulse 1.4s ease-in-out 0.2s infinite' }}></span>
+                        <span style={{ width: 6, height: 6, background: colors.vino, borderRadius: '50%', animation: 'ayudaPulse 1.4s ease-in-out 0.4s infinite' }}></span>
+                      </div>
+                      Pensando…
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div style={{ padding: 12, borderTop: `1px solid ${colors.border}`, background: colors.cardBg, display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                <textarea
+                  value={ayudaInput}
+                  onChange={(e) => setAyudaInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviarMensajeAyuda(); } }}
+                  placeholder="Escribe tu pregunta…"
+                  rows={1}
+                  style={{ flex: 1, padding: '10px 12px', border: `1px solid ${colors.border}`, borderRadius: 8, fontSize: 14, fontFamily: fontBody, background: colors.bg, outline: 'none', resize: 'none', boxSizing: 'border-box', maxHeight: 120, lineHeight: 1.4 }}
+                />
+                <button
+                  onClick={enviarMensajeAyuda}
+                  disabled={ayudaCargando || !ayudaInput.trim()}
+                  title="Enviar"
+                  style={{ background: (ayudaCargando || !ayudaInput.trim()) ? colors.border : colors.vino, color: '#fff', border: 'none', borderRadius: 8, padding: '11px 14px', cursor: (ayudaCargando || !ayudaInput.trim()) ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center' }}
+                >
+                  <Send size={16} />
+                </button>
+              </div>
+            </>
+          )}
+
+          <style>{`
+            @keyframes ayudaPulse {
+              0%, 100% { opacity: 0.3; transform: scale(0.8); }
+              50% { opacity: 1; transform: scale(1.2); }
+            }
+          `}</style>
+        </div>
+      )}
+
       {/* FOOTER */}
       <footer style={{ background: colors.primary, color: '#C5D2E0', padding: '24px 48px', marginTop: 60, textAlign: 'center', fontSize: 12 }}>
         <div style={{ fontFamily: fontDisplay, fontSize: 14, color: colors.accent, fontStyle: 'italic', marginBottom: 4 }}>
           Plataforma de Inteligencia Clínica de Claudia Talamantes Dosal
         </div>
-        <div>Acompañando a encontrar su sentido de vida</div>
+        <div>Acompañando a las personas a encontrar su sentido de vida</div>
       </footer>
     </div>
   );
