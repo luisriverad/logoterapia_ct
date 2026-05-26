@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Calendar, UserPlus, FileText, Search, Phone, MessageCircle, Save, Trash2, Eye, Download, ChevronLeft, ChevronRight, Clock, User, Hash, X, Archive, NotebookPen, ArrowRight, StickyNote, Sparkles, Send, Brain, RefreshCw, Key, Mic, MicOff, HelpCircle, Plus, Library, BookmarkPlus, Check, Pencil } from 'lucide-react';
+import { Calendar, UserPlus, FileText, Search, Phone, MessageCircle, Save, Trash2, Eye, Download, ChevronLeft, ChevronRight, ChevronDown, Clock, User, Hash, X, Archive, NotebookPen, ArrowRight, StickyNote, Sparkles, Send, Brain, RefreshCw, Key, Mic, MicOff, HelpCircle, Plus, Library, BookmarkPlus, Check, Pencil, Printer } from 'lucide-react';
 import { useAuth } from './auth/AuthProvider.jsx';
 import Login from './auth/Login.jsx';
 import { supabase } from './lib/supabaseClient.js';
@@ -26,6 +26,7 @@ import {
   deleteBiblioteca,
 } from './lib/data/platformData.js';
 import { notaFromRow, reporteFromRow, citaFromRow } from './lib/data/mappers.js';
+import { mdToHtml } from './lib/markdown.js';
 
 const App = () => {
   const { session, authLoading } = useAuth();
@@ -75,6 +76,7 @@ const App = () => {
   const [bibliotecaBusqueda, setBibliotecaBusqueda] = useState('');
   const [bibEditandoId, setBibEditandoId] = useState(null);
   const [bibTituloInput, setBibTituloInput] = useState('');
+  const [bibExpandidos, setBibExpandidos] = useState([]); // ids de notas desplegadas
 
   // ============ NOTAS DE SESIÓN ============
   const [notaActual, setNotaActual] = useState({
@@ -690,6 +692,71 @@ Cuando la pregunta sea clínica, responde desde el marco de la logoterapia de Vi
     }
     setBibEditandoId(null);
     setBibTituloInput('');
+  };
+
+  const toggleBibExpandido = (id) => {
+    setBibExpandidos((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  const imprimirNota = (b) => {
+    const escape = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const titulo = b.titulo || b.pregunta || 'Nota';
+    const fecha = b.fecha ? new Date(b.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' }) : '';
+    const cuerpo = mdToHtml(b.respuesta || '');
+    const html = `<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+<meta charset="UTF-8">
+<title>${escape(titulo)}</title>
+<style>
+  @page { size: Letter; margin: 22mm 20mm; }
+  * { box-sizing: border-box; }
+  body { font-family: 'Helvetica Neue', Arial, sans-serif; color: #0F1E33; margin: 0; padding: 0; line-height: 1.6; font-size: 12pt; }
+  .header { border-bottom: 3px solid #6E1423; padding-bottom: 14px; margin-bottom: 20px; }
+  .header h1 { color: #6E1423; font-size: 18pt; margin: 0 0 4px 0; }
+  .header .fecha { color: #5A6B80; font-size: 10pt; text-transform: uppercase; letter-spacing: 1.2px; font-weight: 700; }
+  .md h1 { font-size: 16pt; color: #1E3A5F; margin: 18px 0 8px; }
+  .md h2 { font-size: 14pt; color: #1E3A5F; margin: 16px 0 8px; padding-bottom: 4px; border-bottom: 1px solid #E0D8C4; }
+  .md h3 { font-size: 12.5pt; color: #1E3A5F; margin: 14px 0 6px; }
+  .md p { margin: 8px 0; }
+  .md ul, .md ol { margin: 8px 0; padding-left: 22px; }
+  .md li { margin: 3px 0; }
+  .md blockquote { margin: 12px 0; padding: 8px 16px; border-left: 4px solid #D9C4A0; background: #F5EFE0; color: #3a4a5a; font-style: italic; }
+  .md code { background: #F1ECE0; padding: 1px 5px; border-radius: 3px; font-family: 'Courier New', monospace; font-size: 0.92em; }
+  .md hr { border: none; border-top: 1px solid #E0D8C4; margin: 16px 0; }
+  .md table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 10.5pt; }
+  .md th, .md td { border: 1px solid #D9C4A0; padding: 7px 10px; text-align: left; vertical-align: top; }
+  .md th { background: #F5EFE0; color: #1E3A5F; }
+  .md a { color: #6E1423; }
+  .footer { margin-top: 28px; padding-top: 12px; border-top: 1px solid #E0D8C4; font-size: 9pt; color: #5A6B80; text-align: center; }
+  .actions { padding: 14px; background: #F5EFE0; text-align: center; }
+  .actions button { padding: 10px 22px; font-size: 11pt; background: #6E1423; color: #fff; border: none; border-radius: 4px; cursor: pointer; margin: 0 4px; }
+  @media print { .actions { display: none; } }
+</style>
+</head>
+<body>
+  <div class="actions">
+    <button onclick="window.print()">🖨️ Imprimir / Guardar como PDF</button>
+    <button onclick="window.close()" style="background:transparent;color:#6E1423;border:1px solid #6E1423;">Cerrar</button>
+  </div>
+  <div class="header">
+    ${fecha ? `<div class="fecha">${escape(fecha)}</div>` : ''}
+    <h1>${escape(titulo)}</h1>
+  </div>
+  <div class="md">${cuerpo}</div>
+  <div class="footer">Mi Biblioteca · Generado el ${escape(new Date().toLocaleString('es-MX'))}</div>
+</body>
+</html>`;
+    const w = window.open('', '_blank');
+    if (!w) {
+      alert('El navegador bloqueó la ventana emergente. Permite ventanas emergentes para esta página y vuelve a intentar.');
+      return;
+    }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+    w.document.title = titulo;
+    setTimeout(() => { try { w.focus(); w.print(); } catch (e) { /* el usuario puede imprimir manualmente */ } }, 350);
   };
 
   const bibliotecaFiltrada = useMemo(() => {
@@ -1727,7 +1794,7 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
 
         {/* ============ ALTA CONSULTANTE ============ */}
         {activeTab === 'alta' && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 32 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 6px 1fr', gap: 32 }}>
             {/* Formulario */}
             <div>
               <h2 style={{ fontFamily: fontDisplay, fontSize: 32, margin: 0, color: colors.primary, fontWeight: 500 }}>
@@ -1803,6 +1870,9 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
                 </div>
               </div>
             </div>
+
+            {/* Separador vertical */}
+            <div style={{ background: colors.border, width: 6, borderRadius: 3 }} />
 
             {/* Lista de consultantes */}
             <div>
@@ -2936,9 +3006,31 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                {bibliotecaFiltrada.map(b => (
+                <style>{`
+                  .bib-md { font-size: 14px; line-height: 1.75; font-family: ${fontBody}; color: ${colors.text}; }
+                  .bib-md > *:first-child { margin-top: 0; }
+                  .bib-md > *:last-child { margin-bottom: 0; }
+                  .bib-md h1 { font-family: ${fontDisplay}; font-size: 22px; color: ${colors.primary}; margin: 20px 0 10px; font-weight: 600; }
+                  .bib-md h2 { font-family: ${fontDisplay}; font-size: 18px; color: ${colors.primary}; margin: 18px 0 8px; padding-bottom: 4px; border-bottom: 1px solid ${colors.border}; font-weight: 600; }
+                  .bib-md h3 { font-family: ${fontDisplay}; font-size: 15px; color: ${colors.vino}; margin: 14px 0 6px; font-weight: 600; }
+                  .bib-md p { margin: 10px 0; }
+                  .bib-md ul, .bib-md ol { margin: 10px 0; padding-left: 24px; }
+                  .bib-md li { margin: 4px 0; }
+                  .bib-md strong { font-weight: 700; color: ${colors.primary}; }
+                  .bib-md em { font-style: italic; }
+                  .bib-md code { background: ${colors.soft}; padding: 1px 6px; border-radius: 3px; font-family: ui-monospace, 'Courier New', monospace; font-size: 0.9em; }
+                  .bib-md blockquote { margin: 12px 0; padding: 8px 16px; border-left: 4px solid ${colors.accent}; background: ${colors.soft}; color: ${colors.textMuted}; font-style: italic; border-radius: 0 4px 4px 0; }
+                  .bib-md hr { border: none; border-top: 1px solid ${colors.border}; margin: 16px 0; }
+                  .bib-md table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 13px; }
+                  .bib-md th, .bib-md td { border: 1px solid ${colors.border}; padding: 8px 12px; text-align: left; vertical-align: top; }
+                  .bib-md th { background: ${colors.soft}; color: ${colors.primary}; font-weight: 600; }
+                  .bib-md a { color: ${colors.vino}; }
+                `}</style>
+                {bibliotecaFiltrada.map(b => {
+                  const expandido = bibExpandidos.includes(b.id);
+                  return (
                   <div key={b.id} style={{ background: colors.cardBg, borderRadius: 8, border: `1px solid ${colors.border}`, borderLeft: `4px solid ${colors.vino}`, padding: 20 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 12 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: 'uppercase', color: colors.vino, fontWeight: 700, fontFamily: fontUI, marginBottom: 4 }}>
                           {new Date(b.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })}
@@ -2957,10 +3049,17 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
                           </div>
                         ) : (
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <div style={{ fontFamily: fontDisplay, fontSize: 16, color: colors.primary, fontWeight: 600, lineHeight: 1.4 }}>
-                              {b.titulo || b.pregunta || 'Sin título'}
+                            <div
+                              onClick={() => toggleBibExpandido(b.id)}
+                              title={expandido ? 'Ocultar contenido' : 'Ver contenido'}
+                              style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', flex: 1, minWidth: 0 }}
+                            >
+                              {expandido ? <ChevronDown size={18} color={colors.vino} style={{ flexShrink: 0 }} /> : <ChevronRight size={18} color={colors.vino} style={{ flexShrink: 0 }} />}
+                              <div style={{ fontFamily: fontDisplay, fontSize: 16, color: colors.primary, fontWeight: 600, lineHeight: 1.4 }}>
+                                {b.titulo || b.pregunta || 'Sin título'}
+                              </div>
                             </div>
-                            <button onClick={() => iniciarEdicionTitulo(b)} title="Editar título" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: colors.textMuted, padding: 2, display: 'flex', flexShrink: 0 }}><Pencil size={14} /></button>
+                            <button onClick={(e) => { e.stopPropagation(); iniciarEdicionTitulo(b); }} title="Editar título" style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: colors.textMuted, padding: 2, display: 'flex', flexShrink: 0 }}><Pencil size={14} /></button>
                           </div>
                         )}
                         {b.pregunta && b.pregunta !== (b.titulo || '') && (
@@ -2977,11 +3076,27 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
                         <Trash2 size={16} />
                       </button>
                     </div>
-                    <div style={{ fontSize: 14, lineHeight: 1.7, fontFamily: fontBody, color: colors.text, whiteSpace: 'pre-wrap', paddingTop: 12, borderTop: `1px dashed ${colors.border}` }}>
-                      {b.respuesta}
-                    </div>
+                    {expandido && (
+                      <>
+                        <div
+                          className="bib-md"
+                          style={{ paddingTop: 14, marginTop: 12, borderTop: `1px dashed ${colors.border}` }}
+                          dangerouslySetInnerHTML={{ __html: mdToHtml(b.respuesta || '') }}
+                        />
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+                          <button
+                            onClick={() => imprimirNota(b)}
+                            title="Imprimir o guardar esta nota como PDF"
+                            style={{ background: 'transparent', border: `1px solid ${colors.vino}`, color: colors.vino, padding: '8px 16px', borderRadius: 4, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontFamily: fontUI, fontWeight: 600 }}
+                          >
+                            <Printer size={15} /> Imprimir
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
