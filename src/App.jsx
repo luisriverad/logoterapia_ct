@@ -3,8 +3,33 @@ import { Calendar, UserPlus, FileText, Search, Phone, MessageCircle, Save, Trash
 import { useAuth } from './auth/AuthProvider.jsx';
 import Login from './auth/Login.jsx';
 import { supabase } from './lib/supabaseClient.js';
+import {
+  loadAllData,
+  migrateFromLocalStorage,
+  loadApiKeyFromLocal,
+  insertConsultante,
+  updateConsultante,
+  deleteConsultante,
+  insertNota,
+  updateNota,
+  deleteNota,
+  insertReporte,
+  updateReporte,
+  deleteReporte,
+  insertCita,
+  updateCita,
+  deleteCita,
+  upsertAyudaConversacion,
+  deleteAyudaConversacion,
+  insertBiblioteca,
+  updateBibliotecaTitulo,
+  deleteBiblioteca,
+} from './lib/data/platformData.js';
+import { notaFromRow, reporteFromRow, citaFromRow } from './lib/data/mappers.js';
 
 const App = () => {
+  const { session, authLoading } = useAuth();
+  const userId = session?.user?.id;
   // ============ ESTADO PRINCIPAL ============
   const [activeTab, setActiveTab] = useState('calendario');
   const [consultantes, setConsultantes] = useState([]);
@@ -273,58 +298,56 @@ const App = () => {
   const [reporteVisualizando, setReporteVisualizando] = useState(null);
   const [vistaArchivo, setVistaArchivo] = useState(null); // null | 'notas' | 'reportes'
 
-  // ============ CARGA INICIAL ============
+  // ============ CARGA INICIAL (Supabase) ============
   useEffect(() => {
-    const cargar = () => {
-      try {
-        const c = localStorage.getItem('consultantes');
-        const s = localStorage.getItem('sesiones');
-        const n = localStorage.getItem('notas');
-        const a = localStorage.getItem('citas');
-        const k = localStorage.getItem('anthropic_api_key');
-        const ay = localStorage.getItem('ayuda_conversaciones');
-        const bib = localStorage.getItem('biblioteca');
-        if (c) setConsultantes(JSON.parse(c));
-        if (s) setSesiones(JSON.parse(s));
-        if (n) setNotas(JSON.parse(n));
-        if (a) setCitas(JSON.parse(a));
-        if (ay) setAyudaConversaciones(JSON.parse(ay));
-        if (bib) setBiblioteca(JSON.parse(bib));
-        if (k) setApiKey(k);
-        else if (import.meta.env.VITE_ANTHROPIC_API_KEY) setApiKey(import.meta.env.VITE_ANTHROPIC_API_KEY);
-      } catch (e) {
-        console.log('Inicio limpio');
-      } finally {
-        setLoading(false);
-      }
-    };
-    cargar();
-  }, []);
-
-  // ============ PERSISTENCIA ============
-  const guardar = (key, data) => {
-    try {
-      localStorage.setItem(key, JSON.stringify(data));
-    } catch (e) {
-      console.error('Error guardando:', e);
+    if (authLoading) return;
+    if (!userId) {
+      setLoading(false);
+      return;
     }
-  };
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      try {
+        await migrateFromLocalStorage(userId);
+        const data = await loadAllData(userId);
+        if (cancelled) return;
+        setConsultantes(data.consultantes);
+        setSesiones(data.sesiones);
+        setNotas(data.notas);
+        setCitas(data.citas);
+        setAyudaConversaciones(data.ayudaConversaciones);
+        setBiblioteca(data.biblioteca);
+        setApiKey(loadApiKeyFromLocal());
+      } catch (e) {
+        console.error('Error cargando datos:', e);
+        alert(`Error cargando datos: ${e.message || e}`);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [userId, authLoading]);
 
   // ============ CONSULTANTES ============
   const guardarConsultante = async () => {
+    if (!userId) return;
     if (!nuevoConsultante.nombre || !nuevoConsultante.edad) {
       alert('Nombre y edad son obligatorios');
       return;
     }
-    let actualizados;
-    if (consultanteEditando) {
-      actualizados = consultantes.map(c => c.id === consultanteEditando ? { ...nuevoConsultante, id: consultanteEditando } : c);
-    } else {
-      const nuevo = { ...nuevoConsultante, id: `c_${Date.now()}`, fechaAlta: new Date().toISOString() };
-      actualizados = [...consultantes, nuevo];
+    try {
+      if (consultanteEditando) {
+        const updated = await updateConsultante(userId, consultanteEditando, nuevoConsultante);
+        setConsultantes((prev) => prev.map((c) => (c.id === consultanteEditando ? updated : c)));
+      } else {
+        const created = await insertConsultante(userId, nuevoConsultante);
+        setConsultantes((prev) => [...prev, created]);
+      }
+    } catch (e) {
+      alert(`Error guardando consultante: ${e.message || e}`);
+      return;
     }
-    setConsultantes(actualizados);
-    await guardar('consultantes', actualizados);
     setNuevoConsultante({ nombre: '', edad: '', telefono: '', motivoConsulta: '', quienRefiere: '' });
     setConsultanteEditando(null);
   };
@@ -335,10 +358,14 @@ const App = () => {
   };
 
   const eliminarConsultante = async (id) => {
+    if (!userId) return;
     if (!confirm('¿Eliminar consultante? Sus reportes se conservarán.')) return;
-    const actualizados = consultantes.filter(c => c.id !== id);
-    setConsultantes(actualizados);
-    await guardar('consultantes', actualizados);
+    try {
+      await deleteConsultante(userId, id);
+      setConsultantes((prev) => prev.filter((c) => c.id !== id));
+    } catch (e) {
+      alert(`Error eliminando consultante: ${e.message || e}`);
+    }
   };
 
   // ============ CHAT IA PREPARACIÓN ============
@@ -500,20 +527,23 @@ Te están preparando para acompañar la próxima sesión con ${consultante?.nomb
     setAyudaVista('chat');
   };
 
-  const eliminarConversacionAyuda = (id) => {
+  const eliminarConversacionAyuda = async (id) => {
+    if (!userId) return;
     if (!confirm('¿Eliminar esta conversación? No se puede recuperar.')) return;
-    setAyudaConversaciones(prev => {
-      const actualizadas = prev.filter(c => c.id !== id);
-      guardar('ayuda_conversaciones', actualizadas);
-      return actualizadas;
-    });
-    if (ayudaActivaId === id) {
-      setAyudaActivaId(null);
-      setAyudaVista('lista');
+    try {
+      await deleteAyudaConversacion(userId, id);
+      setAyudaConversaciones((prev) => prev.filter((c) => c.id !== id));
+      if (ayudaActivaId === id) {
+        setAyudaActivaId(null);
+        setAyudaVista('lista');
+      }
+    } catch (e) {
+      alert(`Error eliminando conversación: ${e.message || e}`);
     }
   };
 
   const enviarMensajeAyuda = async () => {
+    if (!userId) return;
     if (!ayudaInput.trim() || ayudaCargando) return;
     if (!apiKey) {
       setApiKeyInput(apiKey);
@@ -526,20 +556,28 @@ Te están preparando para acompañar la próxima sesión con ${consultante?.nomb
     const ahora = new Date().toISOString();
     const mensajeUsuario = { role: 'user', content: texto };
 
-    // Localiza o crea la conversación activa
     let conv = ayudaActivaId ? ayudaConversaciones.find(c => c.id === ayudaActivaId) : null;
-    let convsBase = ayudaConversaciones;
     if (!conv) {
       conv = { id: `ay_${Date.now()}`, titulo: texto.slice(0, 48) + (texto.length > 48 ? '…' : ''), mensajes: [], creada: ahora, actualizada: ahora };
-      convsBase = [conv, ...ayudaConversaciones];
-      setAyudaActivaId(conv.id);
     }
 
-    const convId = conv.id;
     const mensajesConUsuario = [...conv.mensajes, mensajeUsuario];
-    const convsConUsuario = convsBase.map(c => c.id === convId ? { ...c, mensajes: mensajesConUsuario, actualizada: ahora } : c);
-    setAyudaConversaciones(convsConUsuario);
-    guardar('ayuda_conversaciones', convsConUsuario);
+    const convConUsuario = { ...conv, mensajes: mensajesConUsuario, actualizada: ahora };
+
+    let convPersistida;
+    try {
+      convPersistida = await upsertAyudaConversacion(userId, convConUsuario);
+    } catch (e) {
+      alert(`Error guardando conversación: ${e.message || e}`);
+      return;
+    }
+
+    const convId = convPersistida.id;
+    setAyudaActivaId(convId);
+    setAyudaConversaciones((prev) => {
+      const sinDuplicado = prev.filter((c) => c.id !== conv.id && c.id !== convId);
+      return [convPersistida, ...sinDuplicado];
+    });
     setAyudaInput('');
     setAyudaCargando(true);
 
@@ -571,20 +609,27 @@ Cuando la pregunta sea clínica, responde desde el marco de la logoterapia de Vi
 
       const respuesta = data.content.filter(b => b.type === 'text').map(b => b.text).join('\n');
       const mensajeAsistente = { role: 'assistant', content: respuesta };
-
-      setAyudaConversaciones(prev => {
-        const actualizadas = prev.map(c => c.id === convId ? { ...c, mensajes: [...mensajesConUsuario, mensajeAsistente], actualizada: new Date().toISOString() } : c);
-        guardar('ayuda_conversaciones', actualizadas);
-        return actualizadas;
-      });
+      const convFinal = {
+        ...convPersistida,
+        mensajes: [...mensajesConUsuario, mensajeAsistente],
+        actualizada: new Date().toISOString(),
+      };
+      const guardada = await upsertAyudaConversacion(userId, convFinal);
+      setAyudaConversaciones((prev) => prev.map((c) => (c.id === convId ? guardada : c)));
     } catch (error) {
       console.error('Error en AYUDA:', error);
       const mensajeError = { role: 'assistant', content: `⚠ Hubo un problema al conectar: ${error.message}. Verifica tu conexión y tu API Key.` };
-      setAyudaConversaciones(prev => {
-        const actualizadas = prev.map(c => c.id === convId ? { ...c, mensajes: [...mensajesConUsuario, mensajeError], actualizada: new Date().toISOString() } : c);
-        guardar('ayuda_conversaciones', actualizadas);
-        return actualizadas;
-      });
+      try {
+        const convError = {
+          ...convPersistida,
+          mensajes: [...mensajesConUsuario, mensajeError],
+          actualizada: new Date().toISOString(),
+        };
+        const guardada = await upsertAyudaConversacion(userId, convError);
+        setAyudaConversaciones((prev) => prev.map((c) => (c.id === convId ? guardada : c)));
+      } catch (e) {
+        console.error(e);
+      }
     } finally {
       setAyudaCargando(false);
     }
@@ -594,36 +639,38 @@ Cuando la pregunta sea clínica, responde desde el marco de la logoterapia de Vi
   const estaEnBiblioteca = (convId, idx) =>
     biblioteca.some(b => b.origen && b.origen.convId === convId && b.origen.idx === idx);
 
-  const guardarEnBiblioteca = (convId, idx) => {
+  const guardarEnBiblioteca = async (convId, idx) => {
+    if (!userId) return;
     if (estaEnBiblioteca(convId, idx)) return;
     const conv = ayudaConversaciones.find(c => c.id === convId);
     if (!conv) return;
     const respuesta = conv.mensajes[idx];
     if (!respuesta || respuesta.role !== 'assistant') return;
-    // La pregunta que originó la respuesta es el mensaje de usuario inmediatamente anterior
     const pregunta = idx > 0 && conv.mensajes[idx - 1].role === 'user' ? conv.mensajes[idx - 1].content : '';
     const entrada = {
-      id: `bib_${Date.now()}`,
       titulo: (pregunta || respuesta.content).slice(0, 80),
       pregunta,
       respuesta: respuesta.content,
       fecha: new Date().toISOString(),
-      origen: { convId, idx }
+      origen: { convId, idx },
     };
-    setBiblioteca(prev => {
-      const actualizada = [entrada, ...prev];
-      guardar('biblioteca', actualizada);
-      return actualizada;
-    });
+    try {
+      const guardada = await insertBiblioteca(userId, entrada);
+      setBiblioteca((prev) => [guardada, ...prev]);
+    } catch (e) {
+      alert(`Error guardando en biblioteca: ${e.message || e}`);
+    }
   };
 
-  const eliminarDeBiblioteca = (id) => {
+  const eliminarDeBiblioteca = async (id) => {
+    if (!userId) return;
     if (!confirm('¿Quitar esta respuesta de Mi Biblioteca?')) return;
-    setBiblioteca(prev => {
-      const actualizada = prev.filter(b => b.id !== id);
-      guardar('biblioteca', actualizada);
-      return actualizada;
-    });
+    try {
+      await deleteBiblioteca(userId, id);
+      setBiblioteca((prev) => prev.filter((b) => b.id !== id));
+    } catch (e) {
+      alert(`Error eliminando de biblioteca: ${e.message || e}`);
+    }
   };
 
   const iniciarEdicionTitulo = (b) => {
@@ -631,14 +678,16 @@ Cuando la pregunta sea clínica, responde desde el marco de la logoterapia de Vi
     setBibTituloInput(b.titulo || b.pregunta || '');
   };
 
-  const guardarTituloBiblioteca = () => {
+  const guardarTituloBiblioteca = async () => {
+    if (!userId) return;
     const titulo = bibTituloInput.trim();
     if (!titulo) { setBibEditandoId(null); return; }
-    setBiblioteca(prev => {
-      const actualizada = prev.map(b => b.id === bibEditandoId ? { ...b, titulo } : b);
-      guardar('biblioteca', actualizada);
-      return actualizada;
-    });
+    try {
+      const actualizada = await updateBibliotecaTitulo(userId, bibEditandoId, titulo);
+      setBiblioteca((prev) => prev.map((b) => (b.id === bibEditandoId ? actualizada : b)));
+    } catch (e) {
+      alert(`Error actualizando título: ${e.message || e}`);
+    }
     setBibEditandoId(null);
     setBibTituloInput('');
   };
@@ -725,21 +774,29 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
 
   // ============ NOTAS ============
   const guardarNota = async () => {
+    if (!userId) return;
     if (!notaActual.consultanteId || !notaActual.fecha) {
       alert('Selecciona consultante y fecha');
       return;
     }
     const consultante = consultantes.find(c => c.id === notaActual.consultanteId);
     const motivoDelConsultante = consultante?.motivoConsulta || '';
-    let actualizadas;
-    if (notaEditando) {
-      actualizadas = notas.map(n => n.id === notaEditando ? { ...notaActual, motivoConsulta: motivoDelConsultante, id: notaEditando, consultanteNombre: consultante?.nombre, edad: consultante?.edad } : n);
-    } else {
-      const nueva = { ...notaActual, motivoConsulta: motivoDelConsultante, id: `n_${Date.now()}`, consultanteNombre: consultante?.nombre, edad: consultante?.edad, fechaCreacion: new Date().toISOString() };
-      actualizadas = [...notas, nueva];
+    const payload = { ...notaActual, motivoConsulta: motivoDelConsultante };
+    const eraEdicion = !!notaEditando;
+    try {
+      if (notaEditando) {
+        const row = await updateNota(userId, notaEditando, payload, notaActual.consultanteId);
+        const enriched = notaFromRow(row, consultantes);
+        setNotas((prev) => prev.map((n) => (n.id === notaEditando ? enriched : n)));
+      } else {
+        const row = await insertNota(userId, payload, notaActual.consultanteId);
+        const enriched = notaFromRow(row, consultantes);
+        setNotas((prev) => [...prev, enriched]);
+      }
+    } catch (e) {
+      alert(`Error guardando nota: ${e.message || e}`);
+      return;
     }
-    setNotas(actualizadas);
-    await guardar('notas', actualizadas);
     setNotaActual({
       consultanteId: '', sesionNum: '', consultaDe: '',
       fecha: new Date().toISOString().split('T')[0],
@@ -747,7 +804,7 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
       contenido: ''
     });
     setNotaEditando(null);
-    alert(notaEditando ? 'Nota actualizada' : 'Nota guardada correctamente');
+    alert(eraEdicion ? 'Nota actualizada' : 'Nota guardada correctamente');
   };
 
   const editarNota = (n) => {
@@ -761,10 +818,14 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
   };
 
   const eliminarNota = async (id) => {
+    if (!userId) return;
     if (!confirm('¿Eliminar esta nota?')) return;
-    const actualizadas = notas.filter(n => n.id !== id);
-    setNotas(actualizadas);
-    await guardar('notas', actualizadas);
+    try {
+      await deleteNota(userId, id);
+      setNotas((prev) => prev.filter((n) => n.id !== id));
+    } catch (e) {
+      alert(`Error eliminando nota: ${e.message || e}`);
+    }
   };
 
   const transferirNotaAReporte = (n) => {
@@ -788,6 +849,7 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
 
   // ============ REPORTES ============
   const guardarReporte = async () => {
+    if (!userId) return;
     if (!reporteSesion.consultanteId || !reporteSesion.fecha) {
       alert('Selecciona un consultante y fecha');
       return;
@@ -795,17 +857,26 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
     const consultante = consultantes.find(c => c.id === reporteSesion.consultanteId);
     const motivoDelConsultante = consultante?.motivoConsulta || '';
     const totalSesionesGlobal = reporteSesion.totalSesiones || '';
+    const payload = {
+      ...reporteSesion,
+      motivoConsulta: motivoDelConsultante,
+      totalSesiones: totalSesionesGlobal,
+    };
     let reporteGuardado;
-    let actualizados;
-    if (reporteEditando) {
-      reporteGuardado = { ...reporteSesion, motivoConsulta: motivoDelConsultante, totalSesiones: totalSesionesGlobal, id: reporteEditando, consultanteNombre: consultante?.nombre, edad: consultante?.edad };
-      actualizados = sesiones.map(s => s.id === reporteEditando ? reporteGuardado : s);
-    } else {
-      reporteGuardado = { ...reporteSesion, motivoConsulta: motivoDelConsultante, totalSesiones: totalSesionesGlobal, id: `r_${Date.now()}`, consultanteNombre: consultante?.nombre, edad: consultante?.edad, fechaCreacion: new Date().toISOString() };
-      actualizados = [...sesiones, reporteGuardado];
+    try {
+      if (reporteEditando) {
+        const row = await updateReporte(userId, reporteEditando, payload, reporteSesion.consultanteId);
+        reporteGuardado = reporteFromRow(row, consultantes);
+        setSesiones((prev) => prev.map((s) => (s.id === reporteEditando ? reporteGuardado : s)));
+      } else {
+        const row = await insertReporte(userId, payload, reporteSesion.consultanteId);
+        reporteGuardado = reporteFromRow(row, consultantes);
+        setSesiones((prev) => [...prev, reporteGuardado]);
+      }
+    } catch (e) {
+      alert(`Error guardando reporte: ${e.message || e}`);
+      return;
     }
-    setSesiones(actualizados);
-    await guardar('sesiones', actualizados);
     exportarReporte(reporteGuardado);
     setReporteSesion({
       orientador: ORIENTADOR_NOMBRE, consultanteId: '', sesionNum: '', consultaDe: '', totalSesiones: '',
@@ -827,11 +898,15 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
   };
 
   const eliminarReporte = async (id) => {
+    if (!userId) return;
     if (!confirm('¿Eliminar este reporte?')) return;
-    const actualizados = sesiones.filter(s => s.id !== id);
-    setSesiones(actualizados);
-    await guardar('sesiones', actualizados);
-    setReporteVisualizando(null);
+    try {
+      await deleteReporte(userId, id);
+      setSesiones((prev) => prev.filter((s) => s.id !== id));
+      setReporteVisualizando(null);
+    } catch (e) {
+      alert(`Error eliminando reporte: ${e.message || e}`);
+    }
   };
 
   const exportarReporte = (r) => {
@@ -920,6 +995,7 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
   };
 
   const guardarCita = async () => {
+    if (!userId) return;
     if (!nuevaCita.consultanteId || !nuevaCita.fecha || !nuevaCita.hora || !nuevaCita.horaFin) {
       alert('Completa consultante, fecha, hora de inicio y hora de fin');
       return;
@@ -930,19 +1006,21 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
       alert('La hora de fin debe ser posterior a la hora de inicio');
       return;
     }
-    const consultante = consultantes.find(c => c.id === nuevaCita.consultanteId);
-    let actualizadas;
-    if (citaEditando) {
-      actualizadas = citas.map(c => c.id === citaEditando
-        ? { ...c, ...nuevaCita, duracion: minFin - minIni, consultanteNombre: consultante?.nombre }
-        : c
-      );
-    } else {
-      const cita = { ...nuevaCita, duracion: minFin - minIni, id: `cita_${Date.now()}`, consultanteNombre: consultante?.nombre };
-      actualizadas = [...citas, cita];
+    const citaPayload = { ...nuevaCita, duracion: minFin - minIni };
+    try {
+      if (citaEditando) {
+        const row = await updateCita(userId, citaEditando, citaPayload, nuevaCita.consultanteId);
+        const enriched = citaFromRow(row, consultantes);
+        setCitas((prev) => prev.map((c) => (c.id === citaEditando ? enriched : c)));
+      } else {
+        const row = await insertCita(userId, citaPayload, nuevaCita.consultanteId);
+        const enriched = citaFromRow(row, consultantes);
+        setCitas((prev) => [...prev, enriched]);
+      }
+    } catch (e) {
+      alert(`Error guardando cita: ${e.message || e}`);
+      return;
     }
-    setCitas(actualizadas);
-    await guardar('citas', actualizadas);
     setNuevaCita({ consultanteId: '', fecha: '', hora: '', horaFin: '', duracion: 60, notas: '' });
     setCitaEditando(null);
     setShowCitaModal(false);
@@ -968,22 +1046,30 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
   };
 
   const eliminarCita = async (id) => {
+    if (!userId) return;
     if (!confirm('¿Eliminar esta cita?')) return;
-    const actualizadas = citas.filter(c => c.id !== id);
-    setCitas(actualizadas);
-    await guardar('citas', actualizadas);
+    try {
+      await deleteCita(userId, id);
+      setCitas((prev) => prev.filter((c) => c.id !== id));
+    } catch (e) {
+      alert(`Error eliminando cita: ${e.message || e}`);
+    }
   };
 
   const eliminarCitaDesdeModal = async () => {
-    if (!citaEditando) return;
+    if (!userId || !citaEditando) return;
     if (!confirm('¿Eliminar esta cita? Úsalo cuando el paciente cancele o ya no aplique.')) return;
-    const actualizadas = citas.filter(c => c.id !== citaEditando);
-    setCitas(actualizadas);
-    await guardar('citas', actualizadas);
-    cerrarCitaModal();
+    try {
+      await deleteCita(userId, citaEditando);
+      setCitas((prev) => prev.filter((c) => c.id !== citaEditando));
+      cerrarCitaModal();
+    } catch (e) {
+      alert(`Error eliminando cita: ${e.message || e}`);
+    }
   };
 
   const moverCita = async (citaId, nuevaFecha, nuevaHora) => {
+    if (!userId) return;
     const cita = citas.find(c => c.id === citaId);
     if (!cita) return;
     const dur = cita.duracion || (cita.horaFin ? minutosDeHora(cita.horaFin) - minutosDeHora(cita.hora) : 60);
@@ -994,12 +1080,19 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
       const fm = finMin % 60;
       nuevaHoraFin = `${String(fh).padStart(2, '0')}:${String(fm).padStart(2, '0')}`;
     }
-    const actualizadas = citas.map(c => c.id === citaId
-      ? { ...c, fecha: nuevaFecha, ...(nuevaHora ? { hora: nuevaHora, horaFin: nuevaHoraFin } : {}) }
-      : c
-    );
-    setCitas(actualizadas);
-    await guardar('citas', actualizadas);
+    const citaPayload = {
+      ...cita,
+      fecha: nuevaFecha,
+      ...(nuevaHora ? { hora: nuevaHora, horaFin: nuevaHoraFin } : {}),
+      duracion: dur,
+    };
+    try {
+      const row = await updateCita(userId, citaId, citaPayload, cita.consultanteId);
+      const enriched = citaFromRow(row, consultantes);
+      setCitas((prev) => prev.map((c) => (c.id === citaId ? enriched : c)));
+    } catch (e) {
+      alert(`Error moviendo cita: ${e.message || e}`);
+    }
   };
 
   // ============ HELPERS CALENDARIO ============
@@ -1087,8 +1180,6 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
   const fontDisplay = "'Inter', 'Helvetica Neue', Arial, system-ui, sans-serif";
   const fontBody = "'Inter', 'Helvetica Neue', Arial, system-ui, sans-serif";
   const fontUI = "'Inter', 'Helvetica Neue', Arial, system-ui, sans-serif";
-
-  const { session, authLoading } = useAuth();
 
   if (loading) {
     return (

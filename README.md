@@ -6,7 +6,7 @@ Plataforma profesional para psicólogos logoterapeutas. Gestión de consultantes
 
 - **Vite** + **React 18**
 - **Lucide React** (íconos)
-- **localStorage** para persistencia local
+- **Supabase** (Auth + Postgres) para persistencia en la nube
 - **API de Anthropic** (Claude Sonnet 4) para el chat de Supervisión Clínica
 
 ---
@@ -75,16 +75,29 @@ plataforma-logoterapia/
 
 ---
 
-## Persistencia de datos
+## Persistencia de datos (Supabase)
 
-Toda la información se guarda en `localStorage` del navegador. Esto significa que:
+Los datos clínicos (consultantes, citas, notas, reportes, ayuda y biblioteca) se guardan en **Supabase Postgres**, asociados al usuario que inicia sesión. La API Key de Anthropic sigue en `localStorage` del navegador.
 
-- Los datos persisten entre sesiones
-- Son privados al equipo donde se usa
-- NO se sincronizan entre dispositivos
-- Para respaldo, usa la función "Exportar" en el Archivo Clínico
+### Configuración inicial
 
-> Si necesitas sincronización en la nube o multi-dispositivo, considera integrar un backend (Firebase, Supabase, etc.)
+1. Crea un proyecto en [supabase.com](https://supabase.com).
+2. En **SQL Editor**, ejecuta en orden:
+   - `supabase/migrations/20260508122800_init_platform.sql`
+   - `supabase/migrations/20260522100000_ayuda_biblioteca.sql`
+3. En **Authentication → Users**, crea el usuario de la plataforma.
+4. Copia URL y anon key a `.env` (usa `env.example` como plantilla):
+
+```env
+VITE_SUPABASE_URL=https://xxxx.supabase.co
+VITE_SUPABASE_ANON_KEY=eyJ...
+```
+
+5. `npm run dev` e inicia sesión.
+
+### Migración desde localStorage
+
+Al primer inicio de sesión, si hay datos en `localStorage` y la cuenta en Supabase está vacía, se importan automáticamente (consultantes, citas, notas, reportes, ayuda y biblioteca). La API Key no se migra.
 
 ---
 
