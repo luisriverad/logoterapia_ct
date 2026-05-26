@@ -1794,7 +1794,7 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
 
         {/* ============ ALTA CONSULTANTE ============ */}
         {activeTab === 'alta' && (
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 32 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 6px 1fr', gap: 32 }}>
             {/* Formulario */}
             <div>
               <h2 style={{ fontFamily: fontDisplay, fontSize: 32, margin: 0, color: colors.primary, fontWeight: 500 }}>
@@ -1870,6 +1870,9 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
                 </div>
               </div>
             </div>
+
+            {/* Separador vertical */}
+            <div style={{ background: colors.border, width: 6, borderRadius: 3 }} />
 
             {/* Lista de consultantes */}
             <div>
