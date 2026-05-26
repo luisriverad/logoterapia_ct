@@ -1955,6 +1955,15 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
                     Basado en las notas y reportes de sesión del consultante seleccionado
                   </div>
                 </div>
+                {prepMensajes.length > 0 && (
+                  <button
+                    onClick={limpiarChat}
+                    title="Borrar toda la conversación actual"
+                    style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.25)', color: '#fff', padding: '8px 12px', borderRadius: 4, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}
+                  >
+                    <Trash2 size={14} /> Limpiar conversaciones
+                  </button>
+                )}
                 <button
                   onClick={() => { setApiKeyInput(apiKey); setShowApiKeyModal(true); }}
                   title={apiKey ? 'API Key configurada — clic para cambiar' : 'Configurar API Key'}
