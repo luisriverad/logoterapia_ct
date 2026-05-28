@@ -21,6 +21,8 @@ import {
   deleteCita,
   upsertAyudaConversacion,
   deleteAyudaConversacion,
+  upsertPrepConversacion,
+  deletePrepConversacion,
   insertBiblioteca,
   updateBibliotecaTitulo,
   deleteBiblioteca,
@@ -55,7 +57,8 @@ const App = () => {
 
   // ============ PREPARACIÓN DE SESIÓN (CHAT IA) ============
   const [prepConsultanteId, setPrepConsultanteId] = useState('');
-  const [prepMensajes, setPrepMensajes] = useState([]);
+  const [prepConversaciones, setPrepConversaciones] = useState([]);
+  const [prepConvActivaId, setPrepConvActivaId] = useState(null);
   const [prepInput, setPrepInput] = useState('');
   const [prepCargando, setPrepCargando] = useState(false);
   const [apiKey, setApiKey] = useState('');
@@ -298,6 +301,7 @@ const App = () => {
   const [filtroConsultante, setFiltroConsultante] = useState('');
   const [busqueda, setBusqueda] = useState('');
   const [reporteVisualizando, setReporteVisualizando] = useState(null);
+  const [notaVisualizando, setNotaVisualizando] = useState(null);
   const [vistaArchivo, setVistaArchivo] = useState(null); // null | 'notas' | 'reportes'
 
   // ============ CARGA INICIAL (Supabase) ============
@@ -320,6 +324,7 @@ const App = () => {
         setCitas(data.citas);
         setAyudaConversaciones(data.ayudaConversaciones);
         setBiblioteca(data.biblioteca);
+        setPrepConversaciones(data.prepConversaciones || []);
         setApiKey(loadApiKeyFromLocal());
       } catch (e) {
         console.error('Error cargando datos:', e);
@@ -419,12 +424,85 @@ Quien refiere: ${consultante.quienRefiere || 'No registrado'}
     return contexto;
   };
 
-  const enviarMensajeChat = async () => {
-    if (!prepInput.trim() || !prepConsultanteId) return;
+  const prepConversacionActiva = useMemo(
+    () => prepConversaciones.find(c => c.id === prepConvActivaId) || null,
+    [prepConversaciones, prepConvActivaId]
+  );
+  const prepMensajes = prepConversacionActiva?.mensajes || [];
 
-    const mensajeUsuario = { role: 'user', content: prepInput };
-    const nuevosMensajes = [...prepMensajes, mensajeUsuario];
-    setPrepMensajes(nuevosMensajes);
+  const prepConversacionesConsultante = useMemo(() => {
+    if (!prepConsultanteId) return [];
+    return [...prepConversaciones]
+      .filter(c => c.consultanteId === prepConsultanteId)
+      .sort((a, b) => new Date(b.actualizada) - new Date(a.actualizada));
+  }, [prepConversaciones, prepConsultanteId]);
+
+  const nuevaConversacionPrep = () => {
+    setPrepConvActivaId(null);
+    setPrepInput('');
+  };
+
+  const abrirConversacionPrep = (id) => {
+    setPrepConvActivaId(id);
+    setPrepInput('');
+  };
+
+  const eliminarConversacionPrep = async (id) => {
+    if (!userId) return;
+    if (!confirm('¿Eliminar esta conversación? No se puede recuperar.')) return;
+    try {
+      await deletePrepConversacion(userId, id);
+      setPrepConversaciones((prev) => prev.filter((c) => c.id !== id));
+      if (prepConvActivaId === id) setPrepConvActivaId(null);
+    } catch (e) {
+      alert(`Error eliminando conversación: ${e.message || e}`);
+    }
+  };
+
+  const enviarMensajeChat = async () => {
+    if (!userId) return;
+    if (!prepInput.trim() || !prepConsultanteId || prepCargando) return;
+
+    if (!apiKey) {
+      setApiKeyInput(apiKey);
+      setShowApiKeyModal(true);
+      alert('Falta configurar la API Key de Anthropic. Da clic en el ícono de llave para pegarla.');
+      return;
+    }
+
+    const texto = prepInput.trim();
+    const ahora = new Date().toISOString();
+    const mensajeUsuario = { role: 'user', content: texto };
+
+    let conv = prepConvActivaId ? prepConversaciones.find(c => c.id === prepConvActivaId) : null;
+    if (!conv) {
+      conv = {
+        id: `pr_${Date.now()}`,
+        consultanteId: prepConsultanteId,
+        titulo: texto.slice(0, 48) + (texto.length > 48 ? '…' : ''),
+        mensajes: [],
+        creada: ahora,
+        actualizada: ahora,
+      };
+    }
+
+    const mensajesConUsuario = [...conv.mensajes, mensajeUsuario];
+    const convConUsuario = { ...conv, consultanteId: prepConsultanteId, mensajes: mensajesConUsuario, actualizada: ahora };
+
+    let convPersistida;
+    try {
+      convPersistida = await upsertPrepConversacion(userId, convConUsuario, prepConsultanteId);
+    } catch (e) {
+      alert(`Error guardando conversación: ${e.message || e}`);
+      return;
+    }
+
+    const convId = convPersistida.id;
+    setPrepConvActivaId(convId);
+    setPrepConversaciones((prev) => {
+      const sinDup = prev.filter((c) => c.id !== conv.id && c.id !== convId);
+      return [convPersistida, ...sinDup];
+    });
     setPrepInput('');
     setPrepCargando(true);
 
@@ -453,16 +531,6 @@ LINEAMIENTOS PARA TUS RESPUESTAS:
 Te están preparando para acompañar la próxima sesión con ${consultante?.nombre || 'el consultante'}.`;
 
     try {
-      if (!apiKey) {
-        setPrepMensajes([...nuevosMensajes, {
-          role: 'assistant',
-          content: '⚠ Falta configurar la API Key de Anthropic. Da clic en el ícono de llave 🔑 arriba a la derecha del chat para pegarla.'
-        }]);
-        setPrepCargando(false);
-        setShowApiKeyModal(true);
-        return;
-      }
-
       const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
@@ -475,36 +543,42 @@ Te están preparando para acompañar la próxima sesión con ${consultante?.nomb
           model: "claude-sonnet-4-6",
           max_tokens: 1500,
           system: systemPrompt,
-          messages: nuevosMensajes.map(m => ({ role: m.role, content: m.content }))
+          messages: mensajesConUsuario.map(m => ({ role: m.role, content: m.content }))
         })
       });
 
       const data = await response.json();
+      if (data.error) throw new Error(data.error.message || 'Error en la API');
 
-      if (data.error) {
-        throw new Error(data.error.message || 'Error en la API');
-      }
-
-      const respuesta = data.content
-        .filter(b => b.type === 'text')
-        .map(b => b.text)
-        .join('\n');
-
-      setPrepMensajes([...nuevosMensajes, { role: 'assistant', content: respuesta }]);
+      const respuesta = data.content.filter(b => b.type === 'text').map(b => b.text).join('\n');
+      const mensajeAsistente = { role: 'assistant', content: respuesta };
+      const convFinal = {
+        ...convPersistida,
+        mensajes: [...mensajesConUsuario, mensajeAsistente],
+        actualizada: new Date().toISOString(),
+      };
+      const guardada = await upsertPrepConversacion(userId, convFinal, prepConsultanteId);
+      setPrepConversaciones((prev) => prev.map((c) => (c.id === convId ? guardada : c)));
     } catch (error) {
       console.error('Error en chat:', error);
-      setPrepMensajes([...nuevosMensajes, {
+      const mensajeError = {
         role: 'assistant',
         content: `⚠ Hubo un problema al conectar con el sistema: ${error.message}. Verifica tu conexión y tu API Key.`
-      }]);
+      };
+      try {
+        const convError = {
+          ...convPersistida,
+          mensajes: [...mensajesConUsuario, mensajeError],
+          actualizada: new Date().toISOString(),
+        };
+        const guardada = await upsertPrepConversacion(userId, convError, prepConsultanteId);
+        setPrepConversaciones((prev) => prev.map((c) => (c.id === convId ? guardada : c)));
+      } catch (e) {
+        console.error(e);
+      }
     } finally {
       setPrepCargando(false);
     }
-  };
-
-  const limpiarChat = () => {
-    if (prepMensajes.length > 0 && !confirm('¿Limpiar la conversación actual?')) return;
-    setPrepMensajes([]);
   };
 
   // ============ AYUDA — CHAT ABIERTO ============
@@ -822,7 +896,7 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
         },
         body: JSON.stringify({
           model: "claude-sonnet-4-6",
-          max_tokens: 800,
+          max_tokens: 4000,
           system: systemPrompt,
           messages: [{ role: 'user', content: userPrompt }]
         })
@@ -1956,11 +2030,6 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
                   Consejos específicos basados en el historial completo del consultante
                 </p>
               </div>
-              {prepMensajes.length > 0 && (
-                <button onClick={limpiarChat} style={{ background: 'transparent', border: `1px solid ${colors.border}`, padding: '10px 16px', borderRadius: 4, cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, color: colors.textMuted }}>
-                  <RefreshCw size={12} /> Nueva conversación
-                </button>
-              )}
             </div>
 
             {/* Selector de consultante */}
@@ -1971,8 +2040,9 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
               <select
                 value={prepConsultanteId}
                 onChange={(e) => {
-                  setPrepConsultanteId(e.target.value);
-                  if (e.target.value !== prepConsultanteId) setPrepMensajes([]);
+                  const nuevo = e.target.value;
+                  if (nuevo !== prepConsultanteId) setPrepConvActivaId(null);
+                  setPrepConsultanteId(nuevo);
                 }}
                 style={{ width: '100%', padding: '14px 16px', border: `1px solid ${colors.border}`, borderRadius: 4, fontSize: 15, fontFamily: fontBody, background: colors.bg, outline: 'none', boxSizing: 'border-box', cursor: 'pointer' }}
               >
@@ -2011,37 +2081,104 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
               })()}
             </div>
 
-            {/* Chat */}
-            <div style={{ background: colors.cardBg, borderRadius: 8, border: `1px solid ${colors.border}`, overflow: 'hidden', display: 'flex', flexDirection: 'column', minHeight: 600 }}>
+            {/* Chat + Sidebar */}
+            <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: 16, alignItems: 'stretch', minHeight: 600 }}>
 
-              {/* Header del chat */}
-              <div style={{ padding: '20px 28px', background: colors.primary, color: '#fff', display: 'flex', alignItems: 'center', gap: 12, borderBottom: `2px solid ${colors.accent}` }}>
-                <div style={{ background: colors.accent, width: 40, height: 40, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Brain size={20} color={colors.primary} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontFamily: fontDisplay, fontSize: 18, fontWeight: 600 }}>Algunas ideas que pueden ayudar</div>
-                  <div style={{ fontSize: 12, color: colors.accentSoft, fontStyle: 'italic' }}>
-                    Basado en las notas y reportes de sesión del consultante seleccionado
+              {/* Sidebar de conversaciones */}
+              <aside style={{ background: colors.cardBg, borderRadius: 8, border: `1px solid ${colors.border}`, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <div style={{ padding: '16px 18px', background: colors.soft, borderBottom: `1px solid ${colors.border}` }}>
+                  <div style={{ fontSize: 10, letterSpacing: 1.8, textTransform: 'uppercase', color: colors.textMuted, fontWeight: 700, marginBottom: 4 }}>
+                    Conversaciones guardadas
+                  </div>
+                  <div style={{ fontSize: 12, color: colors.textMuted, fontStyle: 'italic' }}>
+                    {prepConsultanteId
+                      ? `${prepConversacionesConsultante.length} ${prepConversacionesConsultante.length === 1 ? 'conversación' : 'conversaciones'} de este consultante`
+                      : 'Selecciona un consultante para verlas'}
                   </div>
                 </div>
-                {prepMensajes.length > 0 && (
+                <div style={{ padding: 12 }}>
                   <button
-                    onClick={limpiarChat}
-                    title="Borrar toda la conversación actual"
-                    style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.25)', color: '#fff', padding: '8px 12px', borderRadius: 4, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}
+                    onClick={nuevaConversacionPrep}
+                    disabled={!prepConsultanteId}
+                    style={{
+                      width: '100%',
+                      background: prepConsultanteId ? colors.primary : colors.border,
+                      color: '#fff', border: 'none', padding: '10px 12px', borderRadius: 6,
+                      cursor: prepConsultanteId ? 'pointer' : 'not-allowed',
+                      fontSize: 13, fontWeight: 600, letterSpacing: 0.5,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, fontFamily: fontUI
+                    }}
                   >
-                    <Trash2 size={14} /> Limpiar conversaciones
+                    <Plus size={14} /> Nueva conversación
                   </button>
-                )}
-                <button
-                  onClick={() => { setApiKeyInput(apiKey); setShowApiKeyModal(true); }}
-                  title={apiKey ? 'API Key configurada — clic para cambiar' : 'Configurar API Key'}
-                  style={{ background: apiKey ? 'rgba(255,255,255,0.12)' : colors.danger, border: `1px solid ${apiKey ? 'rgba(255,255,255,0.25)' : colors.danger}`, color: '#fff', padding: '8px 12px', borderRadius: 4, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}
-                >
-                  <Key size={14} /> {apiKey ? 'API Key' : 'Configurar key'}
-                </button>
-              </div>
+                </div>
+                <div style={{ flex: 1, overflowY: 'auto', padding: '0 12px 12px', maxHeight: 560 }}>
+                  {prepConsultanteId && prepConversacionesConsultante.length === 0 && (
+                    <div style={{ textAlign: 'center', color: colors.textMuted, fontSize: 12, padding: '24px 8px', fontStyle: 'italic', lineHeight: 1.5 }}>
+                      Aún no hay conversaciones para este consultante. Empieza una nueva.
+                    </div>
+                  )}
+                  {prepConversacionesConsultante.map(c => {
+                    const activa = c.id === prepConvActivaId;
+                    return (
+                      <div
+                        key={c.id}
+                        onClick={() => abrirConversacionPrep(c.id)}
+                        style={{
+                          background: activa ? colors.soft : colors.cardBg,
+                          border: `1px solid ${activa ? colors.accent : colors.border}`,
+                          borderLeft: activa ? `3px solid ${colors.accent}` : `1px solid ${colors.border}`,
+                          borderRadius: 6, padding: '10px 12px', marginBottom: 6,
+                          cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6
+                        }}
+                      >
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: colors.text, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontFamily: fontBody }}>
+                            {c.titulo || 'Conversación'}
+                          </div>
+                          <div style={{ fontSize: 10.5, color: colors.textMuted, marginTop: 2, fontFamily: fontBody }}>
+                            {new Date(c.actualizada).toLocaleString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })} · {c.mensajes.length} {c.mensajes.length === 1 ? 'mensaje' : 'mensajes'}
+                          </div>
+                        </div>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); eliminarConversacionPrep(c.id); }}
+                          title="Eliminar conversación"
+                          style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: colors.danger, padding: 4, display: 'flex' }}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </aside>
+
+              {/* Chat */}
+              <div style={{ background: colors.cardBg, borderRadius: 8, border: `1px solid ${colors.border}`, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+
+                {/* Header del chat */}
+                <div style={{ padding: '20px 28px', background: colors.primary, color: '#fff', display: 'flex', alignItems: 'center', gap: 12, borderBottom: `2px solid ${colors.accent}` }}>
+                  <div style={{ background: colors.accent, width: 40, height: 40, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Brain size={20} color={colors.primary} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontFamily: fontDisplay, fontSize: 18, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {prepConversacionActiva?.titulo || 'Algunas ideas que pueden ayudar'}
+                    </div>
+                    <div style={{ fontSize: 12, color: colors.accentSoft, fontStyle: 'italic' }}>
+                      {prepConversacionActiva
+                        ? `Guardada · ${new Date(prepConversacionActiva.actualizada).toLocaleString('es-MX', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}`
+                        : 'Basado en las notas y reportes de sesión del consultante seleccionado'}
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => { setApiKeyInput(apiKey); setShowApiKeyModal(true); }}
+                    title={apiKey ? 'API Key configurada — clic para cambiar' : 'Configurar API Key'}
+                    style={{ background: apiKey ? 'rgba(255,255,255,0.12)' : colors.danger, border: `1px solid ${apiKey ? 'rgba(255,255,255,0.25)' : colors.danger}`, color: '#fff', padding: '8px 12px', borderRadius: 4, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}
+                  >
+                    <Key size={14} /> {apiKey ? 'API Key' : 'Configurar key'}
+                  </button>
+                </div>
 
               {/* Mensajes */}
               <div style={{ flex: 1, padding: 28, overflowY: 'auto', maxHeight: 500, background: colors.bg }}>
@@ -2162,12 +2299,13 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
                 </div>
               </div>
 
-              <style>{`
-                @keyframes pulse {
-                  0%, 100% { opacity: 0.3; transform: scale(0.8); }
-                  50% { opacity: 1; transform: scale(1.2); }
-                }
-              `}</style>
+                <style>{`
+                  @keyframes pulse {
+                    0%, 100% { opacity: 0.3; transform: scale(0.8); }
+                    50% { opacity: 1; transform: scale(1.2); }
+                  }
+                `}</style>
+              </div>
             </div>
           </div>
         )}
@@ -2945,6 +3083,9 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
                         </div>
                       </div>
                       <div style={{ display: 'flex', gap: 6 }}>
+                        <button onClick={() => setNotaVisualizando(item)} style={{ background: colors.soft, border: 'none', padding: '8px 14px', borderRadius: 4, cursor: 'pointer', fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <Eye size={12} /> Ver
+                        </button>
                         <button onClick={() => { editarNota(item); setActiveTab('notas'); }} style={{ background: 'transparent', border: `1px solid ${colors.border}`, padding: '8px 14px', borderRadius: 4, cursor: 'pointer', fontSize: 12 }}>
                           Editar
                         </button>
@@ -3273,6 +3414,51 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
                 </button>
                 <button onClick={() => cargarReporte(reporteVisualizando)} style={{ flex: 1, background: colors.primary, color: '#fff', border: 'none', padding: 14, borderRadius: 4, cursor: 'pointer', fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase', fontSize: 13 }}>
                   Editar Reporte
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL VER NOTA */}
+      {notaVisualizando && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(31, 38, 34, 0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: 20, overflowY: 'auto' }}>
+          <div style={{ background: colors.cardBg, borderRadius: 8, maxWidth: 800, width: '100%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+            <div style={{ padding: 24, borderBottom: `2px solid ${colors.accent}`, background: colors.primary, color: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 10 }}>
+              <div>
+                <div style={{ fontSize: 11, letterSpacing: 2, color: colors.accentSoft, textTransform: 'uppercase' }}>Nota de Sesión</div>
+                <h3 style={{ fontFamily: fontDisplay, fontSize: 24, margin: '4px 0 0', fontWeight: 500 }}>{notaVisualizando.consultanteNombre || 'Sin consultante'}</h3>
+              </div>
+              <button onClick={() => setNotaVisualizando(null)} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: '#fff' }}>
+                <X size={24} />
+              </button>
+            </div>
+            <div style={{ padding: 32 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, marginBottom: 24, padding: 20, background: colors.soft, borderRadius: 4 }}>
+                <div><div style={{ fontSize: 10, color: colors.textMuted, letterSpacing: 1, textTransform: 'uppercase' }}>Consulta</div><div style={{ fontFamily: fontBody, fontSize: 14, fontWeight: 600 }}>{notaVisualizando.sesionNum || '—'} de {notaVisualizando.consultaDe || '—'}</div></div>
+                <div><div style={{ fontSize: 10, color: colors.textMuted, letterSpacing: 1, textTransform: 'uppercase' }}>Fecha</div><div style={{ fontFamily: fontBody, fontSize: 14, fontWeight: 600 }}>{notaVisualizando.fecha ? new Date(notaVisualizando.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'}</div></div>
+                {notaVisualizando.edad && (
+                  <div><div style={{ fontSize: 10, color: colors.textMuted, letterSpacing: 1, textTransform: 'uppercase' }}>Edad</div><div style={{ fontFamily: fontBody, fontSize: 14, fontWeight: 600 }}>{notaVisualizando.edad} años</div></div>
+                )}
+              </div>
+
+              {[
+                { titulo: 'Motivo de Consulta', valor: notaVisualizando.motivoConsulta },
+                { titulo: 'Tema de Consulta', valor: notaVisualizando.temaConsulta },
+                { titulo: 'Notas de la Sesión', valor: notaVisualizando.contenido }
+              ].map(seccion => (
+                <div key={seccion.titulo} style={{ marginBottom: 24 }}>
+                  <div style={{ fontSize: 11, letterSpacing: 2, color: colors.accent, textTransform: 'uppercase', fontWeight: 700, marginBottom: 8 }}>{seccion.titulo}</div>
+                  <div style={{ fontFamily: fontBody, fontSize: 14, lineHeight: 1.7, color: colors.text, padding: 16, background: colors.bg, borderRadius: 4, borderLeft: `3px solid ${colors.accent}`, whiteSpace: 'pre-wrap' }}>
+                    {seccion.valor || <em style={{ color: colors.textMuted }}>— Sin información —</em>}
+                  </div>
+                </div>
+              ))}
+
+              <div style={{ display: 'flex', gap: 12, marginTop: 32, paddingTop: 24, borderTop: `1px solid ${colors.border}` }}>
+                <button onClick={() => { const item = notaVisualizando; setNotaVisualizando(null); editarNota(item); setActiveTab('notas'); }} style={{ flex: 1, background: colors.primary, color: '#fff', border: 'none', padding: 14, borderRadius: 4, cursor: 'pointer', fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase', fontSize: 13 }}>
+                  Editar Nota
                 </button>
               </div>
             </div>

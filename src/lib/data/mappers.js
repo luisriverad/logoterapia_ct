@@ -160,6 +160,30 @@ export function ayudaToRow(userId, conv) {
   };
 }
 
+export function prepFromRow(row) {
+  return {
+    id: row.id,
+    legacyId: row.legacy_id,
+    consultanteId: row.consultante_id,
+    titulo: row.titulo || '',
+    mensajes: Array.isArray(row.mensajes) ? row.mensajes : [],
+    creada: row.creada,
+    actualizada: row.actualizada,
+  };
+}
+
+export function prepToRow(userId, conv, consultanteId) {
+  return {
+    user_id: userId,
+    consultante_id: consultanteId || conv.consultanteId || null,
+    legacy_id: isUuid(conv.id) ? null : conv.id,
+    titulo: conv.titulo || '',
+    mensajes: conv.mensajes || [],
+    creada: conv.creada || new Date().toISOString(),
+    actualizada: conv.actualizada || new Date().toISOString(),
+  };
+}
+
 export function bibliotecaFromRow(row) {
   return {
     id: row.id,
