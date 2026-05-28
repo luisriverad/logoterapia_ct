@@ -30,6 +30,28 @@ import {
 import { notaFromRow, reporteFromRow, citaFromRow } from './lib/data/mappers.js';
 import { mdToHtml } from './lib/markdown.js';
 
+// ============ FECHAS — ancladas a la Ciudad de México ============
+const TZ_MX = 'America/Mexico_City';
+
+// "Ahora" con la hora de pared de la Ciudad de México, sin importar la zona del navegador.
+const ahoraMx = () => new Date(new Date().toLocaleString('en-US', { timeZone: TZ_MX }));
+
+// Date -> "YYYY-MM-DD" usando los componentes locales del Date (sin conversión a UTC).
+const formatoFechaMx = (d) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
+// "YYYY-MM-DD" -> Date a medianoche local (evita que new Date(str) lo lea como UTC y reste un día).
+const fechaLocal = (str) => {
+  if (!str) return null;
+  const [y, m, d] = String(str).slice(0, 10).split('-').map(Number);
+  if (!y || !m || !d) return null;
+  return new Date(y, m - 1, d);
+};
+
 const App = () => {
   const { session, authLoading } = useAuth();
   const userId = session?.user?.id;
@@ -43,7 +65,7 @@ const App = () => {
 
   // ============ CALENDARIO ============
   const [vistaCalendario, setVistaCalendario] = useState('mensual');
-  const [fechaActual, setFechaActual] = useState(new Date());
+  const [fechaActual, setFechaActual] = useState(() => ahoraMx());
   const [showCitaModal, setShowCitaModal] = useState(false);
   const [nuevaCita, setNuevaCita] = useState({ consultanteId: '', fecha: '', hora: '', horaFin: '', duracion: 60, notas: '' });
   const [citaEditando, setCitaEditando] = useState(null);
@@ -84,7 +106,7 @@ const App = () => {
   // ============ NOTAS DE SESIÓN ============
   const [notaActual, setNotaActual] = useState({
     consultanteId: '', sesionNum: '', consultaDe: '',
-    fecha: new Date().toISOString().split('T')[0],
+    fecha: formatoFechaMx(ahoraMx()),
     motivoConsulta: '', temaConsulta: '',
     contenido: ''
   });
@@ -292,7 +314,7 @@ const App = () => {
   const ORIENTADOR_NOMBRE = 'CLAUDIA TALAMANTES DOSAL';
   const [reporteSesion, setReporteSesion] = useState({
     orientador: ORIENTADOR_NOMBRE, consultanteId: '', sesionNum: '', consultaDe: '', totalSesiones: '',
-    fecha: new Date().toISOString().split('T')[0],
+    fecha: formatoFechaMx(ahoraMx()),
     motivoConsulta: '', temaConsulta: '', intervencion: '', autoObservacion: '', tiempoSesion: ''
   });
   const [reporteEditando, setReporteEditando] = useState(null);
@@ -940,7 +962,7 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
     }
     setNotaActual({
       consultanteId: '', sesionNum: '', consultaDe: '',
-      fecha: new Date().toISOString().split('T')[0],
+      fecha: formatoFechaMx(ahoraMx()),
       motivoConsulta: '', temaConsulta: '',
       contenido: ''
     });
@@ -1021,7 +1043,7 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
     exportarReporte(reporteGuardado);
     setReporteSesion({
       orientador: ORIENTADOR_NOMBRE, consultanteId: '', sesionNum: '', consultaDe: '', totalSesiones: '',
-      fecha: new Date().toISOString().split('T')[0],
+      fecha: formatoFechaMx(ahoraMx()),
       motivoConsulta: '', temaConsulta: '', intervencion: '', autoObservacion: '', tiempoSesion: ''
     });
     setReporteEditando(null);
@@ -1245,7 +1267,7 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
     setFechaActual(nueva);
   };
 
-  const formatoFecha = (d) => d.toISOString().split('T')[0];
+  const formatoFecha = formatoFechaMx;
   const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
   const dias = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
 
@@ -1504,7 +1526,7 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
               </button>
             </div>
             <div style={{ fontSize: 12, fontFamily: fontBody, marginTop: 8, color: '#C5D2E0', letterSpacing: '0.04em' }}>
-              {new Date().toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+              {ahoraMx().toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
             </div>
           </div>
         </div>
@@ -1607,7 +1629,7 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
                 <button onClick={() => cambiarFecha(1)} style={{ background: 'transparent', border: `1px solid ${colors.border}`, padding: 8, borderRadius: 4, cursor: 'pointer' }}>
                   <ChevronRight size={16} />
                 </button>
-                <button onClick={() => setFechaActual(new Date())} style={{ background: colors.soft, border: 'none', padding: '8px 14px', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 500 }}>
+                <button onClick={() => setFechaActual(ahoraMx())} style={{ background: colors.soft, border: 'none', padding: '8px 14px', borderRadius: 4, cursor: 'pointer', fontSize: 12, fontWeight: 500 }}>
                   HOY
                 </button>
               </div>
@@ -1634,7 +1656,7 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
               const fechaStr = formatoFecha(fechaActual);
               const citasHoy = citasDelDia(fechaStr);
               const altoTotal = (HORA_FIN - HORA_INI) * PX_HORA;
-              const ahora = new Date();
+              const ahora = ahoraMx();
               const esHoy = formatoFecha(ahora) === fechaStr;
               const ahoraOffset = (ahora.getHours() - HORA_INI) * 60 + ahora.getMinutes();
               const mostrarAhora = esHoy && ahoraOffset >= 0 && ahoraOffset <= altoTotal;
@@ -1748,7 +1770,7 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
                 <div style={{ display: 'grid', gridTemplateColumns: '70px repeat(5, 1fr) 0.5fr 0.5fr', borderBottom: `1px solid ${colors.border}` }}>
                   <div style={{ background: colors.soft, borderRight: `1px solid ${colors.border}` }} />
                   {semanaActual.map((d, i) => {
-                    const esHoy = formatoFecha(d) === formatoFecha(new Date());
+                    const esHoy = formatoFecha(d) === formatoFecha(ahoraMx());
                     const esFinDeSemana = d.getDay() === 0 || d.getDay() === 6;
                     return (
                       <div key={i} style={{ padding: 12, background: esHoy ? colors.primary : esFinDeSemana ? '#DCDCDC' : colors.soft, color: esHoy ? '#fff' : colors.text, textAlign: 'center', borderRight: i < 6 ? `1px solid ${colors.border}` : 'none' }}>
@@ -1823,8 +1845,8 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr) 0.5fr 0.5fr' }}>
                   {diasMes.map((d, i) => {
                     if (!d) return <div key={i} style={{ minHeight: 110, background: colors.soft, borderRight: `1px solid ${colors.border}`, borderBottom: `1px solid ${colors.border}` }} />;
-                    const esHoy = formatoFecha(d) === formatoFecha(new Date());
-                    const inicioHoy = new Date(); inicioHoy.setHours(0, 0, 0, 0);
+                    const esHoy = formatoFecha(d) === formatoFecha(ahoraMx());
+                    const inicioHoy = ahoraMx(); inicioHoy.setHours(0, 0, 0, 0);
                     const esPasado = d < inicioHoy && !esHoy;
                     const esFinDeSemana = d.getDay() === 0 || d.getDay() === 6;
                     const citasDia = citasDelDia(formatoFecha(d));
@@ -2526,7 +2548,7 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
                           setNotaEditando(null);
                           setNotaActual({
                             consultanteId: '', sesionNum: '', consultaDe: '',
-                            fecha: new Date().toISOString().split('T')[0],
+                            fecha: formatoFechaMx(ahoraMx()),
                             motivoConsulta: '', temaConsulta: '',
                             contenido: ''
                           });
@@ -2617,7 +2639,7 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
                                 {n.consultanteNombre}
                               </div>
                               <div style={{ fontSize: 11, color: colors.textMuted, marginTop: 2 }}>
-                                Consulta {n.sesionNum || '?'} de {n.consultaDe || '?'} · {new Date(n.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                Consulta {n.sesionNum || '?'} de {n.consultaDe || '?'} · {fechaLocal(n.fecha)?.toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' })}
                               </div>
                             </div>
                           </div>
@@ -2667,7 +2689,7 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
                     setReporteEditando(null);
                     setReporteSesion({
                       orientador: ORIENTADOR_NOMBRE, consultanteId: '', sesionNum: '', consultaDe: '', totalSesiones: '',
-                      fecha: new Date().toISOString().split('T')[0],
+                      fecha: formatoFechaMx(ahoraMx()),
                       motivoConsulta: '', temaConsulta: '', intervencion: '', autoObservacion: '', tiempoSesion: ''
                     });
                   }}
@@ -3055,7 +3077,7 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
                         </div>
                         <div style={{ display: 'flex', gap: 16, marginTop: 6, fontSize: 12, color: colors.textMuted }}>
                           <span><Hash size={11} style={{ display: 'inline', marginRight: 4 }} />Consulta {item.sesionNum} de {item.consultaDe}</span>
-                          <span><Calendar size={11} style={{ display: 'inline', marginRight: 4 }} />{new Date(item.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
+                          <span><Calendar size={11} style={{ display: 'inline', marginRight: 4 }} />{fechaLocal(item.fecha)?.toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
                           {item.tiempoSesion && <span><Clock size={11} style={{ display: 'inline', marginRight: 4 }} />{item.tiempoSesion}</span>}
                         </div>
                       </div>
@@ -3093,7 +3115,7 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
                         </div>
                         <div style={{ display: 'flex', gap: 16, marginTop: 6, fontSize: 12, color: colors.textMuted }}>
                           {(item.sesionNum || item.consultaDe) && <span><Hash size={11} style={{ display: 'inline', marginRight: 4 }} />Consulta {item.sesionNum || '?'} de {item.consultaDe || '?'}</span>}
-                          <span><Calendar size={11} style={{ display: 'inline', marginRight: 4 }} />{new Date(item.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
+                          <span><Calendar size={11} style={{ display: 'inline', marginRight: 4 }} />{fechaLocal(item.fecha)?.toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
                         </div>
                       </div>
                       <div style={{ display: 'flex', gap: 6 }}>
@@ -3404,7 +3426,7 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
                 <div><div style={{ fontSize: 10, color: colors.textMuted, letterSpacing: 1, textTransform: 'uppercase' }}>Edad</div><div style={{ fontFamily: fontBody, fontSize: 14, fontWeight: 600 }}>{reporteVisualizando.edad || '—'} años</div></div>
                 <div><div style={{ fontSize: 10, color: colors.textMuted, letterSpacing: 1, textTransform: 'uppercase' }}>Consulta</div><div style={{ fontFamily: fontBody, fontSize: 14, fontWeight: 600 }}>{reporteVisualizando.sesionNum} de {reporteVisualizando.consultaDe}</div></div>
                 <div><div style={{ fontSize: 10, color: colors.textMuted, letterSpacing: 1, textTransform: 'uppercase' }}>Total de Sesiones</div><div style={{ fontFamily: fontBody, fontSize: 14, fontWeight: 600 }}>{reporteVisualizando.totalSesiones || '—'}</div></div>
-                <div><div style={{ fontSize: 10, color: colors.textMuted, letterSpacing: 1, textTransform: 'uppercase' }}>Fecha</div><div style={{ fontFamily: fontBody, fontSize: 14, fontWeight: 600 }}>{new Date(reporteVisualizando.fecha).toLocaleDateString('es-MX')}</div></div>
+                <div><div style={{ fontSize: 10, color: colors.textMuted, letterSpacing: 1, textTransform: 'uppercase' }}>Fecha</div><div style={{ fontFamily: fontBody, fontSize: 14, fontWeight: 600 }}>{fechaLocal(reporteVisualizando.fecha)?.toLocaleDateString('es-MX')}</div></div>
                 <div style={{ gridColumn: '1 / -1' }}><div style={{ fontSize: 10, color: colors.textMuted, letterSpacing: 1, textTransform: 'uppercase' }}>Tiempo de Sesión</div><div style={{ fontFamily: fontBody, fontSize: 14, fontWeight: 600 }}>{reporteVisualizando.tiempoSesion || '—'}</div></div>
               </div>
 
@@ -3451,7 +3473,7 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
             <div style={{ padding: 32 }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16, marginBottom: 24, padding: 20, background: colors.soft, borderRadius: 4 }}>
                 <div><div style={{ fontSize: 10, color: colors.textMuted, letterSpacing: 1, textTransform: 'uppercase' }}>Consulta</div><div style={{ fontFamily: fontBody, fontSize: 14, fontWeight: 600 }}>{notaVisualizando.sesionNum || '—'} de {notaVisualizando.consultaDe || '—'}</div></div>
-                <div><div style={{ fontSize: 10, color: colors.textMuted, letterSpacing: 1, textTransform: 'uppercase' }}>Fecha</div><div style={{ fontFamily: fontBody, fontSize: 14, fontWeight: 600 }}>{notaVisualizando.fecha ? new Date(notaVisualizando.fecha).toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'}</div></div>
+                <div><div style={{ fontSize: 10, color: colors.textMuted, letterSpacing: 1, textTransform: 'uppercase' }}>Fecha</div><div style={{ fontFamily: fontBody, fontSize: 14, fontWeight: 600 }}>{notaVisualizando.fecha ? fechaLocal(notaVisualizando.fecha)?.toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' }) : '—'}</div></div>
                 {notaVisualizando.edad && (
                   <div><div style={{ fontSize: 10, color: colors.textMuted, letterSpacing: 1, textTransform: 'uppercase' }}>Edad</div><div style={{ fontFamily: fontBody, fontSize: 14, fontWeight: 600 }}>{notaVisualizando.edad} años</div></div>
                 )}
@@ -3507,7 +3529,7 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
                   <div><div style={{ fontSize: 10, color: colors.textMuted, letterSpacing: 1, textTransform: 'uppercase' }}>Sesiones registradas</div><div style={{ fontFamily: fontBody, fontSize: 14, fontWeight: 600 }}>{sesionesConsultante.length}</div></div>
                   <div><div style={{ fontSize: 10, color: colors.textMuted, letterSpacing: 1, textTransform: 'uppercase' }}>Notas registradas</div><div style={{ fontFamily: fontBody, fontSize: 14, fontWeight: 600 }}>{notasConsultante.length}</div></div>
                   {ultimaSesion && (
-                    <div style={{ gridColumn: '1 / -1' }}><div style={{ fontSize: 10, color: colors.textMuted, letterSpacing: 1, textTransform: 'uppercase' }}>Última sesión</div><div style={{ fontFamily: fontBody, fontSize: 14, fontWeight: 600 }}>{new Date(ultimaSesion.fecha).toLocaleDateString('es-MX')}</div></div>
+                    <div style={{ gridColumn: '1 / -1' }}><div style={{ fontSize: 10, color: colors.textMuted, letterSpacing: 1, textTransform: 'uppercase' }}>Última sesión</div><div style={{ fontFamily: fontBody, fontSize: 14, fontWeight: 600 }}>{fechaLocal(ultimaSesion.fecha)?.toLocaleDateString('es-MX')}</div></div>
                   )}
                 </div>
 
