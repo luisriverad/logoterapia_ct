@@ -13,6 +13,8 @@ import {
   ayudaToRow,
   bibliotecaFromRow,
   bibliotecaToRow,
+  prepFromRow,
+  prepToRow,
 } from './mappers.js';
 
 const MIGRATION_FLAG_PREFIX = 'platform_migrated_v1_';
@@ -63,6 +65,7 @@ export async function loadAllData(userId) {
     { data: citasRows, error: e4 },
     { data: ayudaRows, error: e5 },
     { data: bibRows, error: e6 },
+    { data: prepRows, error: e7 },
   ] = await Promise.all([
     supabase.from('consultantes').select('*').eq('user_id', userId).order('nombre'),
     supabase.from('notas_sesion').select('*').eq('user_id', userId).order('fecha', { ascending: false }),
@@ -70,6 +73,7 @@ export async function loadAllData(userId) {
     supabase.from('citas').select('*').eq('user_id', userId).order('fecha'),
     supabase.from('ayuda_conversaciones').select('*').eq('user_id', userId).order('actualizada', { ascending: false }),
     supabase.from('biblioteca').select('*').eq('user_id', userId).order('fecha', { ascending: false }),
+    supabase.from('prep_conversaciones').select('*').eq('user_id', userId).order('actualizada', { ascending: false }),
   ]);
 
   if (e1) throw e1;
@@ -78,6 +82,7 @@ export async function loadAllData(userId) {
   if (e4) throw e4;
   if (e5) throw e5;
   if (e6) throw e6;
+  if (e7) throw e7;
 
   const consultantes = (consultantesRows || []).map((r) => consultanteFromRow(r));
   const notas = (notasRows || []).map((r) => notaFromRow(r, consultantes));
@@ -85,8 +90,9 @@ export async function loadAllData(userId) {
   const citas = (citasRows || []).map((r) => citaFromRow(r, consultantes));
   const ayudaConversaciones = (ayudaRows || []).map((r) => ayudaFromRow(r));
   const biblioteca = (bibRows || []).map((r) => bibliotecaFromRow(r));
+  const prepConversaciones = (prepRows || []).map((r) => prepFromRow(r));
 
-  return { consultantes, notas, sesiones, citas, ayudaConversaciones, biblioteca };
+  return { consultantes, notas, sesiones, citas, ayudaConversaciones, biblioteca, prepConversaciones };
 }
 
 export async function migrateFromLocalStorage(userId) {
@@ -317,6 +323,40 @@ export async function upsertAyudaConversacion(userId, conv) {
 
 export async function deleteAyudaConversacion(userId, id) {
   const { error } = await supabase.from('ayuda_conversaciones').delete().eq('id', id).eq('user_id', userId);
+  if (error) throw error;
+}
+
+// ——— Preparando mi sesión (chat por consultante) ———
+
+export async function upsertPrepConversacion(userId, conv, consultanteId) {
+  const base = prepToRow(userId, conv, consultanteId);
+  if (isUuid(conv.id)) {
+    const { data, error } = await supabase
+      .from('prep_conversaciones')
+      .update({
+        consultante_id: base.consultante_id,
+        titulo: base.titulo,
+        mensajes: base.mensajes,
+        actualizada: base.actualizada,
+      })
+      .eq('id', conv.id)
+      .eq('user_id', userId)
+      .select()
+      .single();
+    if (error) throw error;
+    return prepFromRow(data);
+  }
+  const { data, error } = await supabase
+    .from('prep_conversaciones')
+    .insert({ ...base, legacy_id: conv.id })
+    .select()
+    .single();
+  if (error) throw error;
+  return prepFromRow(data);
+}
+
+export async function deletePrepConversacion(userId, id) {
+  const { error } = await supabase.from('prep_conversaciones').delete().eq('id', id).eq('user_id', userId);
   if (error) throw error;
 }
 
