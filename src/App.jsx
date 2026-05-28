@@ -1907,6 +1907,8 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
                     Motivo de Consulta
                   </label>
                   <textarea
+                    spellCheck="true"
+                    lang="es-MX"
                     value={nuevoConsultante.motivoConsulta}
                     onChange={(e) => setNuevoConsultante({ ...nuevoConsultante, motivoConsulta: e.target.value })}
                     placeholder="¿Qué trae al consultante a terapia?"
@@ -2258,6 +2260,8 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
               <div style={{ padding: 20, borderTop: `1px solid ${colors.border}`, background: colors.cardBg }}>
                 <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
                   <textarea
+                    spellCheck="true"
+                    lang="es-MX"
                     value={prepInput}
                     onChange={(e) => setPrepInput(e.target.value)}
                     onKeyDown={(e) => {
@@ -2428,6 +2432,8 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
                         Tema de Consulta
                       </label>
                       <textarea
+                    spellCheck="true"
+                    lang="es-MX"
                         value={notaActual.temaConsulta}
                         onChange={(e) => setNotaActual({ ...notaActual, temaConsulta: e.target.value })}
                         placeholder="Tema central trabajado en la sesión..."
@@ -2486,6 +2492,8 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
 
                   <div style={{ padding: 28 }}>
                     <textarea
+                    spellCheck="true"
+                    lang="es-MX"
                       value={notaActual.contenido}
                       onChange={(e) => setNotaActual({ ...notaActual, contenido: e.target.value })}
                       placeholder="Escribe libremente durante la sesión: observaciones, frases del consultante, intervenciones realizadas, hipótesis, temas que emergen, lenguaje no verbal, hallazgos relevantes, ejercicios aplicados...
@@ -2795,6 +2803,8 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
                     Tema de Consulta
                   </label>
                   <textarea
+                    spellCheck="true"
+                    lang="es-MX"
                     value={reporteSesion.temaConsulta}
                     onChange={(e) => setReporteSesion({ ...reporteSesion, temaConsulta: e.target.value })}
                     placeholder="Tema central trabajado en la sesión..."
@@ -2828,6 +2838,8 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
               </div>
               <div style={{ padding: 32 }}>
                 <textarea
+                    spellCheck="true"
+                    lang="es-MX"
                   value={reporteSesion.intervencion}
                   onChange={(e) => setReporteSesion({ ...reporteSesion, intervencion: e.target.value })}
                   placeholder="Descripción detallada de la intervención logoterapéutica realizada: técnicas aplicadas, diálogo socrático, derreflexión, intención paradójica, ejercicios de búsqueda de sentido..."
@@ -2847,6 +2859,8 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
                     Auto-Observación del Orientador
                   </label>
                   <textarea
+                    spellCheck="true"
+                    lang="es-MX"
                     value={reporteSesion.autoObservacion}
                     onChange={(e) => setReporteSesion({ ...reporteSesion, autoObservacion: e.target.value })}
                     placeholder="Reflexión personal del orientador: contratransferencia, aprendizajes, hipótesis a explorar, supervisión sugerida..."
@@ -3296,7 +3310,7 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
             </div>
             <div style={{ marginBottom: 24 }}>
               <label style={{ display: 'block', fontSize: 11, letterSpacing: 1.5, textTransform: 'uppercase', color: colors.textMuted, marginBottom: 6, fontWeight: 600 }}>Notas</label>
-              <textarea value={nuevaCita.notas} onChange={(e) => setNuevaCita({ ...nuevaCita, notas: e.target.value })} rows={2} style={{ width: '100%', padding: 12, border: `1px solid ${colors.border}`, borderRadius: 4, fontSize: 14, background: colors.bg, boxSizing: 'border-box', fontFamily: fontBody, resize: 'vertical' }} />
+              <textarea spellCheck="true" lang="es-MX" value={nuevaCita.notas} onChange={(e) => setNuevaCita({ ...nuevaCita, notas: e.target.value })} rows={2} style={{ width: '100%', padding: 12, border: `1px solid ${colors.border}`, borderRadius: 4, fontSize: 14, background: colors.bg, boxSizing: 'border-box', fontFamily: fontBody, resize: 'vertical' }} />
             </div>
             <div style={{ display: 'flex', gap: 12 }}>
               <button onClick={guardarCita} style={{ flex: 1, background: colors.primary, color: '#fff', border: 'none', padding: 14, borderRadius: 4, cursor: 'pointer', fontWeight: 600, letterSpacing: 1, textTransform: 'uppercase', fontSize: 13 }}>{citaEditando ? 'Guardar Cambios' : 'Guardar Cita'}</button>
@@ -3676,6 +3690,8 @@ Esta bitácora se transferirá automáticamente al Reporte formal cuando estés 
               </div>
               <div style={{ padding: 12, borderTop: `1px solid ${colors.border}`, background: colors.cardBg, display: 'flex', gap: 8, alignItems: 'flex-end' }}>
                 <textarea
+                    spellCheck="true"
+                    lang="es-MX"
                   value={ayudaInput}
                   onChange={(e) => setAyudaInput(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviarMensajeAyuda(); } }}

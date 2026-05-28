@@ -57,16 +57,16 @@ async function countUserRows(table, userId) {
   return count ?? 0;
 }
 
+function isMissingTableError(error, tableName) {
+  if (!error) return false;
+  const msg = String(error.message || '');
+  // PostgREST uses PGRST205 for "table not found in schema cache"
+  if (error.code === 'PGRST205') return true;
+  return msg.includes(`Could not find the table 'public.${tableName}'`) || msg.includes(`public.${tableName}`);
+}
+
 export async function loadAllData(userId) {
-  const [
-    { data: consultantesRows, error: e1 },
-    { data: notasRows, error: e2 },
-    { data: reportesRows, error: e3 },
-    { data: citasRows, error: e4 },
-    { data: ayudaRows, error: e5 },
-    { data: bibRows, error: e6 },
-    { data: prepRows, error: e7 },
-  ] = await Promise.all([
+  const results = await Promise.all([
     supabase.from('consultantes').select('*').eq('user_id', userId).order('nombre'),
     supabase.from('notas_sesion').select('*').eq('user_id', userId).order('fecha', { ascending: false }),
     supabase.from('reportes_sesion').select('*').eq('user_id', userId).order('fecha', { ascending: false }),
@@ -76,13 +76,27 @@ export async function loadAllData(userId) {
     supabase.from('prep_conversaciones').select('*').eq('user_id', userId).order('actualizada', { ascending: false }),
   ]);
 
+  const [
+    { data: consultantesRows, error: e1 },
+    { data: notasRows, error: e2 },
+    { data: reportesRows, error: e3 },
+    { data: citasRows, error: e4 },
+    { data: ayudaRows, error: e5 },
+    { data: bibRows, error: e6 },
+    prepRes,
+  ] = results;
+
+  let prepRows = prepRes?.data || [];
+  const e7 = prepRes?.error;
+
   if (e1) throw e1;
   if (e2) throw e2;
   if (e3) throw e3;
   if (e4) throw e4;
   if (e5) throw e5;
   if (e6) throw e6;
-  if (e7) throw e7;
+  // If this table isn't deployed yet (common on production), don't block the whole app.
+  if (e7 && !isMissingTableError(e7, 'prep_conversaciones')) throw e7;
 
   const consultantes = (consultantesRows || []).map((r) => consultanteFromRow(r));
   const notas = (notasRows || []).map((r) => notaFromRow(r, consultantes));
@@ -343,7 +357,10 @@ export async function upsertPrepConversacion(userId, conv, consultanteId) {
       .eq('user_id', userId)
       .select()
       .single();
-    if (error) throw error;
+    if (error) {
+      if (isMissingTableError(error, 'prep_conversaciones')) return conv;
+      throw error;
+    }
     return prepFromRow(data);
   }
   const { data, error } = await supabase
@@ -351,13 +368,19 @@ export async function upsertPrepConversacion(userId, conv, consultanteId) {
     .insert({ ...base, legacy_id: conv.id })
     .select()
     .single();
-  if (error) throw error;
+  if (error) {
+    if (isMissingTableError(error, 'prep_conversaciones')) return conv;
+    throw error;
+  }
   return prepFromRow(data);
 }
 
 export async function deletePrepConversacion(userId, id) {
   const { error } = await supabase.from('prep_conversaciones').delete().eq('id', id).eq('user_id', userId);
-  if (error) throw error;
+  if (error) {
+    if (isMissingTableError(error, 'prep_conversaciones')) return;
+    throw error;
+  }
 }
 
 // ——— Biblioteca ———
