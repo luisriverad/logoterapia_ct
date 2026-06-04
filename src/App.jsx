@@ -563,7 +563,7 @@ Te están preparando para acompañar la próxima sesión con ${consultante?.nomb
         },
         body: JSON.stringify({
           model: "claude-sonnet-4-6",
-          max_tokens: 1500,
+          max_tokens: 64000,
           system: systemPrompt,
           messages: mensajesConUsuario.map(m => ({ role: m.role, content: m.content }))
         })
@@ -696,7 +696,7 @@ Cuando la pregunta sea clínica, responde desde el marco de la logoterapia de Vi
         },
         body: JSON.stringify({
           model: "claude-sonnet-4-6",
-          max_tokens: 1500,
+          max_tokens: 64000,
           system: systemPrompt,
           messages: mensajesConUsuario.map(m => ({ role: m.role, content: m.content }))
         })
@@ -918,7 +918,7 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
         },
         body: JSON.stringify({
           model: "claude-sonnet-4-6",
-          max_tokens: 4000,
+          max_tokens: 64000,
           system: systemPrompt,
           messages: [{ role: 'user', content: userPrompt }]
         })
