@@ -855,6 +855,93 @@ Cuando la pregunta sea clínica, responde desde el marco de la logoterapia de Vi
     setTimeout(() => { try { w.focus(); w.print(); } catch (e) { /* el usuario puede imprimir manualmente */ } }, 350);
   };
 
+  const imprimirConversacion = (conv) => {
+    if (!conv || !Array.isArray(conv.mensajes) || conv.mensajes.length === 0) {
+      alert('No hay una conversación con mensajes para exportar.');
+      return;
+    }
+    const escape = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const titulo = conv.titulo || 'Conversación de preparación';
+    const consultante = consultantes.find(c => c.id === conv.consultanteId);
+    const fecha = conv.actualizada
+      ? new Date(conv.actualizada).toLocaleString('es-MX', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+      : '';
+    const mensajesHtml = conv.mensajes.map((m) => {
+      if (m.role === 'user') {
+        return `<div class="msg user">
+          <div class="rol">Pregunta</div>
+          <div class="contenido">${escape(m.content || '').replace(/\n/g, '<br>')}</div>
+        </div>`;
+      }
+      return `<div class="msg assistant">
+        <div class="rol">Algunas ideas que pueden ayudar</div>
+        <div class="md">${mdToHtml(m.content || '')}</div>
+      </div>`;
+    }).join('');
+    const html = `<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+<meta charset="UTF-8">
+<title>${escape(titulo)}</title>
+<style>
+  @page { size: Letter; margin: 22mm 20mm; }
+  * { box-sizing: border-box; }
+  body { font-family: 'Helvetica Neue', Arial, sans-serif; color: #0F1E33; margin: 0; padding: 0; line-height: 1.6; font-size: 12pt; }
+  .header { border-bottom: 3px solid #6E1423; padding-bottom: 14px; margin-bottom: 24px; }
+  .header h1 { color: #6E1423; font-size: 18pt; margin: 0 0 4px 0; }
+  .header .fecha { color: #5A6B80; font-size: 10pt; text-transform: uppercase; letter-spacing: 1.2px; font-weight: 700; }
+  .header .consultante { color: #1E3A5F; font-size: 11pt; margin-top: 4px; font-weight: 600; }
+  .msg { margin: 0 0 18px; }
+  .msg .rol { font-size: 9pt; letter-spacing: 1.3px; text-transform: uppercase; font-weight: 700; margin-bottom: 6px; page-break-after: avoid; }
+  .msg.user { background: #F0F3F7; border-left: 4px solid #1E3A5F; padding: 12px 16px; border-radius: 4px; }
+  .msg.user .rol { color: #1E3A5F; }
+  .msg.assistant { border-left: 4px solid #D9C4A0; padding: 12px 16px; background: #FBF8F0; border-radius: 4px; }
+  .msg.assistant .rol { color: #6E1423; }
+  .md h1 { font-size: 15pt; color: #1E3A5F; margin: 14px 0 8px; }
+  .md h2 { font-size: 13.5pt; color: #1E3A5F; margin: 14px 0 8px; padding-bottom: 4px; border-bottom: 1px solid #E0D8C4; }
+  .md h3 { font-size: 12pt; color: #1E3A5F; margin: 12px 0 6px; }
+  .md p { margin: 8px 0; }
+  .md ul, .md ol { margin: 8px 0; padding-left: 22px; }
+  .md li { margin: 3px 0; }
+  .md blockquote { margin: 12px 0; padding: 8px 16px; border-left: 4px solid #D9C4A0; background: #F5EFE0; color: #3a4a5a; font-style: italic; }
+  .md code { background: #F1ECE0; padding: 1px 5px; border-radius: 3px; font-family: 'Courier New', monospace; font-size: 0.92em; }
+  .md hr { border: none; border-top: 1px solid #E0D8C4; margin: 16px 0; }
+  .md table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 10.5pt; }
+  .md th, .md td { border: 1px solid #D9C4A0; padding: 7px 10px; text-align: left; vertical-align: top; }
+  .md th { background: #F5EFE0; color: #1E3A5F; }
+  .md a { color: #6E1423; }
+  .footer { margin-top: 28px; padding-top: 12px; border-top: 1px solid #E0D8C4; font-size: 9pt; color: #5A6B80; text-align: center; }
+  .actions { padding: 14px; background: #F5EFE0; text-align: center; }
+  .actions button { padding: 10px 22px; font-size: 11pt; background: #6E1423; color: #fff; border: none; border-radius: 4px; cursor: pointer; margin: 0 4px; }
+  @media print { .actions { display: none; } }
+</style>
+</head>
+<body>
+  <div class="actions">
+    <button onclick="window.print()">🖨️ Imprimir / Guardar como PDF</button>
+    <button onclick="window.close()" style="background:transparent;color:#6E1423;border:1px solid #6E1423;">Cerrar</button>
+  </div>
+  <div class="header">
+    ${fecha ? `<div class="fecha">${escape(fecha)}</div>` : ''}
+    <h1>${escape(titulo)}</h1>
+    ${consultante ? `<div class="consultante">Consultante: ${escape(consultante.nombre || '')}</div>` : ''}
+  </div>
+  ${mensajesHtml}
+  <div class="footer">Preparando mi sesión · Generado el ${escape(new Date().toLocaleString('es-MX'))}</div>
+</body>
+</html>`;
+    const w = window.open('', '_blank');
+    if (!w) {
+      alert('El navegador bloqueó la ventana emergente. Permite ventanas emergentes para esta página y vuelve a intentar.');
+      return;
+    }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+    w.document.title = titulo;
+    setTimeout(() => { try { w.focus(); w.print(); } catch (e) { /* el usuario puede imprimir manualmente */ } }, 350);
+  };
+
   const bibliotecaFiltrada = useMemo(() => {
     const q = bibliotecaBusqueda.trim().toLowerCase();
     const ordenada = [...biblioteca].sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
@@ -2195,6 +2282,15 @@ Devuelve solo el texto del reporte, sin comentarios adicionales.`;
                         : 'Basado en las notas y reportes de sesión del consultante seleccionado'}
                     </div>
                   </div>
+                  {prepConversacionActiva && prepMensajes.length > 0 && (
+                    <button
+                      onClick={() => imprimirConversacion(prepConversacionActiva)}
+                      title="Exportar conversación a PDF / imprimir"
+                      style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.25)', color: '#fff', padding: '8px 12px', borderRadius: 4, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, fontSize: 12 }}
+                    >
+                      <Download size={14} /> Exportar PDF
+                    </button>
+                  )}
                   <button
                     onClick={() => { setApiKeyInput(apiKey); setShowApiKeyModal(true); }}
                     title={apiKey ? 'API Key configurada — clic para cambiar' : 'Configurar API Key'}
